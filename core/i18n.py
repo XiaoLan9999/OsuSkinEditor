@@ -8,9 +8,11 @@ _LANG = "en-US"
 _DICT = {}
 
 def locales_dir() -> Path:
+    """Return locales/ path for both dev and PyInstaller(onefile)."""
     import sys, os
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    return Path(base).parent / "locales"
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "locales"
+    return Path(__file__).resolve().parent.parent / "locales"
 
 def available_languages():
     return ["en-US", "zh-CN"]

@@ -4,10 +4,12 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QSplitter, QListWidget, QWidget, QVBoxLayout, QTabWidget,
-    QMessageBox, QMenu, QDockWidget, QPushButton, QHBoxLayout, QGridLayout, QLabel, QSpinBox, QCheckBox
+    QMessageBox, QMenu, QDockWidget, QPushButton, QHBoxLayout, QGridLayout, QLabel, QSpinBox, QCheckBox, QDialog, QDialogButtonBox
 )
-from PySide6.QtGui import QAction, QActionGroup
-from PySide6.QtCore import Qt, QSettings, QByteArray, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
+from PySide6.QtCore import Qt, QSettings, QByteArray, QTimer, QUrl
+from core.app_links import get_links
+from core import i18n
 
 from core.skin_loader import SkinLoader
 from ui.preview.std_preview import StdPreview
@@ -58,6 +60,8 @@ class MainWindow(QMainWindow):
         self.settings_menu = menubar.addMenu("")
         self.debug_menu = menubar.addMenu("")      # Debug 顶栏
         self.mania_menu = menubar.addMenu("")      # MANIA SETTINGS 顶栏
+
+        self.author_menu = menubar.addMenu("")      # 作者 顶栏
         self.recent_menu = QMenu(self)
 
         self.act_open = QAction(self)
@@ -67,12 +71,29 @@ class MainWindow(QMainWindow):
         self.act_set_osu = QAction(self)
         self.act_quit = QAction(self)
 
+        # 作者信息动作
+        self.act_about_author = QAction(self)
+
+        # 作者链接动作
+        self.act_link_github = QAction(self)
+        self.act_link_steam = QAction(self)
+        self.act_link_bilibili = QAction(self)
+        self.act_link_blog = QAction(self)
+
         self.act_open.triggered.connect(self.on_open_generic)
         self.act_open_osu.triggered.connect(self.on_open_osu_skins)
         self.act_open_last.triggered.connect(self.on_open_last_skin)
         self.act_reload.triggered.connect(self.reload_skin)
         self.act_set_osu.triggered.connect(self.on_set_osu_root)
         self.act_quit.triggered.connect(self.close)
+
+        # 连接作者链接动作（点击后在浏览器打开）
+        self.act_link_github.triggered.connect(lambda: QDesktopServices.openUrl(QUrl('https://github.com/XiaoLan9999/OsuSkinEditor')))
+        self.act_link_steam.triggered.connect(lambda: QDesktopServices.openUrl(QUrl('https://steamcommunity.com/profiles/76561198969998874/')))
+        self.act_link_bilibili.triggered.connect(lambda: QDesktopServices.openUrl(QUrl('https://space.bilibili.com/325569826')))
+        self.act_link_blog.triggered.connect(lambda: QDesktopServices.openUrl(QUrl('https://blog.xiaolan9999.net/')))
+        self.act_about_author.triggered.connect(self._show_author_info_dialog)
+
 
         # language menu
         self.lang_menu = QMenu(self)
@@ -86,6 +107,13 @@ class MainWindow(QMainWindow):
         self.act_center_image = QAction(self); self.act_center_image.setCheckable(True)
         self.act_center_alpha = QAction(self); self.act_center_alpha.setCheckable(True)
         self.center_group.addAction(self.act_center_image); self.center_group.addAction(self.act_center_alpha)
+        self.author_menu.addAction(self.act_about_author)
+
+        self.author_menu.addSeparator()
+        self.author_menu.addAction(self.act_link_github)
+        self.author_menu.addAction(self.act_link_steam)
+        self.author_menu.addAction(self.act_link_bilibili)
+        self.author_menu.addAction(self.act_link_blog)
         self.center_menu.addAction(self.act_center_image); self.center_menu.addAction(self.act_center_alpha)
         cmode = self.settings.value("ui/approach_center_mode","image",str); self.std_preview.set_approach_center_mode(cmode)
         (self.act_center_alpha if cmode=="alpha" else self.act_center_image).setChecked(True)
@@ -281,8 +309,35 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
     # ---------- i18n ----------
+
+    def _show_author_info_dialog(self):
+            # ---------- xiaolan ----------
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox
+        from PySide6.QtCore import Qt
+        dlg = QDialog(self)
+        dlg.setWindowTitle(i18n.t("about.author_title", "作者信息"))
+        lay = QVBoxLayout(dlg)
+        html = (
+            "当前版本 v1.0<br>"
+            "<b>作者：小蓝（XiaoLanツ / XiaoLan9999）</b><br>"
+            "谢谢你使用本工具，欢迎反馈与交流！<br>"
+            "后续还会进行更新<br>"
+            "（Std的问题太多了暂时搞不完）<br>"
+            "有建议请直接告诉我！！<br>"
+            "<b>喜欢本工具就在Bilibili上关注我吧！</b><br>"
+        )
+        lab = QLabel(html, dlg)
+        lab.setTextFormat(Qt.RichText)
+        lab.setOpenExternalLinks(True)
+        lab.setWordWrap(True)
+        lay.addWidget(lab)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok, parent=dlg)
+        btns.accepted.connect(dlg.accept)
+        lay.addWidget(btns)
+        dlg.exec()
+
     def retranslate(self):
-        self.setWindowTitle(i18n.t("app.title", "Osu Skin Editor"))
+        self.setWindowTitle(i18n.t("app.title", "Osu XiaoLan Skin Editor "))
         self.file_menu.setTitle(i18n.t("menu.file", "File"))
         self.settings_menu.setTitle(i18n.t("menu.settings", "Settings"))
         self.debug_menu.setTitle(i18n.t("menu.std_settings", "Std 设置(仍在开发中)"))
@@ -290,6 +345,14 @@ class MainWindow(QMainWindow):
         self.recent_menu.setTitle(i18n.t("menu.recent_skins", "Recent skins"))
         self.lang_menu.setTitle(i18n.t("menu.language", "Language"))
         self.center_menu.setTitle(i18n.t("menu.centering", "Centering"))
+
+        self.author_menu.setTitle(i18n.t("menu.author", "作者"))
+        self.act_about_author.setText(i18n.t("action.about_author", "作者信息…"))
+
+        self.act_link_github.setText(i18n.t("links.github", "Github项目地址"))
+        self.act_link_steam.setText(i18n.t("links.steam", "Steam个人主页"))
+        self.act_link_bilibili.setText(i18n.t("links.bilibili", "B站个人主页"))
+        self.act_link_blog.setText(i18n.t("links.blog", "个人博客"))
 
         self.act_open.setText(i18n.t("action.open_skin_folder", "Open Skin Folder…"))
         self.act_open_osu.setText(i18n.t("action.open_osu_skins", "Open osu! Skins…"))
