@@ -72,13 +72,16 @@ def _read_ini_robust(path: Path) -> ConfigParser:
         # skip comment-like or heading lines
         if any(s.startswith(p) for p in comment_prefixes):
             continue
+        # also drop pure decoration separators like ======= or ----
+        if re.fullmatch(r'[=\-_.~`|/*\\]{3,}', s):
+            continue
         # strip inline // comments
         if '//' in s:
             s = s.split('//', 1)[0].rstrip()
             if not s:
                 continue
-        # accept key-value-ish lines
-        if '=' in s or ':' in s:
+        # accept only key-like lines: Key: val  /  Key=val
+        if re.match(r'^[A-Za-z0-9_][A-Za-z0-9_ ]*\s*[:=]', s):
             out_lines.append(s)
         # else drop silently
 
