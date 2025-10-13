@@ -1,4 +1,4 @@
-# osu! XiaoLan Skin Editor（含 STD + MANIA 预览）
+# osu! XiaoLan Skin Editor（含 STD + MANIA 预览 - 完善中）
 
 - 打开皮肤目录（包含 `skin.ini`）
 - 自动发现常见素材（优先使用 `@2x`，预览时按 0.5 缩放）
