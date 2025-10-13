@@ -1,0 +1,25 @@
+{
+  "menu": {
+    "debug": "Debug",
+    "mania_settings": "MANIA SETTINGS"
+  },
+  "action": {
+    "debug_show": "Show Debug Panel",
+    "mania_ini": "Mania INI Editor"
+  },
+  "mania": {
+    "dock_title": "Mania INI",
+    "keys": "Keys (existing / new)",
+    "or_create": "→ or create:",
+    "col_start": "ColumnStart:",
+    "col_right": "ColumnRight:",
+    "col_width": "ColumnWidth:",
+    "col_spacing": "ColumnSpacing:",
+    "line_width": "ColumnLineWidth:",
+    "hit_pos": "HitPosition:",
+    "width_scale": "WidthForNoteHeightScale:",
+    "btn_reload": "Load from skin.ini",
+    "btn_save": "Save to skin.ini",
+    "btn_restore": "Restore .bak"
+  }
+}

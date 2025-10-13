@@ -1,0 +1,3 @@
+PySide6
+Pillow
+# watchdog  # 若要做“文件变动自动热重载”，后续再启用
