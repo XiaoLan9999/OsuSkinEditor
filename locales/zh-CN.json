@@ -1,0 +1,37 @@
+{
+  "app": {
+    "title": "osu! 小蓝皮肤编辑器 v1.2"
+  },
+  "menu": {
+    "file": "文件",
+    "settings": "设置",
+    "language": "语言",
+    "recent_skins": "最近打开"
+  },
+  "action": {
+    "open_skin_folder": "打开皮肤文件夹...",
+    "open_osu_skins": "打开 osu!/Skins...",
+    "open_last_skin": "打开上次皮肤",
+    "reload": "重新加载",
+    "set_osu_folder": "设置 osu! 目录...",
+    "exit": "退出",
+    "lang_en": "English（英文）",
+    "lang_zh": "中文（简体）"
+  },
+  "dialog": {
+    "select_skin": "选择皮肤文件夹（需包含 skin.ini）",
+    "select_osu_skin": "在 osu!/Skins 下选择一个皮肤",
+    "select_osu_folder": "选择 osu! 目录（包含“Skins”的那个文件夹）",
+    "not_osu_title": "不是有效的 osu! 目录",
+    "not_osu_msg": "该目录下没有 “Skins” 子文件夹。"
+  },
+  "status": {
+    "ready": "就绪",
+    "loaded": "已加载：{path}",
+    "osu_set": "已设置 osu! 目录：{path}"
+  },
+  "tab": {
+    "std": "STD 预览",
+    "mania": "Mania 预览"
+  }
+}
