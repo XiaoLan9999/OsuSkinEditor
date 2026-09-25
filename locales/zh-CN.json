@@ -1,12 +1,16 @@
 {
   "app": {
-    "title": "osu! 小蓝皮肤编辑器 v1.2"
+    "title": "osu! 小蓝皮肤编辑器"
   },
   "menu": {
     "file": "文件",
     "settings": "设置",
     "language": "语言",
-    "recent_skins": "最近打开"
+    "recent_skins": "最近打开",
+    "std_settings": "Standard 设置",
+    "mania_settings": "Mania 设置",
+    "author": "关于",
+    "assets": "素材工具"
   },
   "action": {
     "open_skin_folder": "打开皮肤文件夹...",
@@ -16,14 +20,19 @@
     "set_osu_folder": "设置 osu! 目录...",
     "exit": "退出",
     "lang_en": "English（英文）",
-    "lang_zh": "中文（简体）"
+    "lang_zh": "中文（简体）",
+    "about_author": "关于作者…",
+    "assets_images": "图片管理…",
+    "assets_audio": "音频管理…",
+    "debug_show": "显示图层偏移面板",
+    "mania_ini": "编辑 Mania 配置"
   },
   "dialog": {
     "select_skin": "选择皮肤文件夹（需包含 skin.ini）",
     "select_osu_skin": "在 osu!/Skins 下选择一个皮肤",
     "select_osu_folder": "选择 osu! 目录（包含“Skins”的那个文件夹）",
     "not_osu_title": "不是有效的 osu! 目录",
-    "not_osu_msg": "该目录下没有 “Skins” 子文件夹。"
+    "not_osu_msg": "该目录下没有 “Skins” 子文件夹"
   },
   "status": {
     "ready": "就绪",
@@ -31,7 +40,90 @@
     "osu_set": "已设置 osu! 目录：{path}"
   },
   "tab": {
-    "std": "STD 预览",
-    "mania": "Mania 预览"
+    "std": "osu!standard",
+    "mania": "osu!mania"
+  },
+  "workspace": {
+    "title": "小蓝皮肤编辑器",
+    "subtitle": "打磨每一个细节，让皮肤成为你的风格",
+    "open": "打开皮肤",
+    "folder": "文件夹",
+    "reload": "刷新",
+    "images": "图片管理",
+    "audio": "音频管理",
+    "mania_settings": "Mania 设置",
+    "library": "素材库",
+    "preview": "皮肤预览",
+    "demo": "演示场景",
+    "pause": "暂停",
+    "resume": "继续",
+    "welcome_title": "小蓝 · 皮肤工作台",
+    "welcome_description": "打开皮肤文件夹，浏览素材、调整配置，\n即时查看 Standard 与 Mania 的演示效果",
+    "welcome_hint": "支持拖入皮肤文件夹或 skin.ini  ·  Ctrl+O 打开  ·  F5 刷新",
+    "osu_skins": "浏览 osu! Skins",
+    "preview_note": "演示预览用于检查素材与图层；不读取谱面，效果请以游戏内为准",
+    "flow_speed": "流速",
+    "demo_tempo": "演示节奏",
+    "hit_guide": "判定参考线",
+    "design": "皮肤设计",
+    "restart": "重置演示",
+    "flow_help": "仅影响演示预览，采用固定流速，不写入 skin.ini",
+    "search": "搜索素材名称…",
+    "filter_all": "全部图片",
+    "filter_std": "Standard 素材",
+    "filter_mania": "Mania 素材",
+    "filter_other": "界面与其他素材",
+    "no_results": "没有匹配的素材，试试其他关键词或分类",
+    "library_empty": "打开皮肤后，这里会显示可预览的图片",
+    "select_asset": "选择素材查看透明背景预览",
+    "load_error": "无法加载皮肤",
+    "keys": "预览键数",
+    "guide_help": "显示真实判定位置的辅助线，仅用于预览"
+  },
+  "preview": {
+    "open_hint": "打开皮肤以开始预览",
+    "no_hitcircle": "缺少 hitcircle 素材",
+    "sample_pattern": "演示排列"
+  },
+  "links": {
+    "github": "GitHub 项目",
+    "steam": "Steam 主页",
+    "bilibili": "哔哩哔哩",
+    "blog": "个人博客"
+  },
+  "designer": {
+    "export_title": "保存皮肤副本",
+    "export_note": "将整个皮肤复制到新文件夹，再写入本次设计",
+    "browse": "浏览…",
+    "parent_folder": "保存到",
+    "copy_name": "副本名称",
+    "export": "保存皮肤副本",
+    "cancel": "取消",
+    "invalid_name": "请输入有效的新文件夹名称",
+    "unsaved_title": "设计尚未保存",
+    "unsaved_message": "当前设计还未保存到皮肤副本\n保存副本后继续，或放弃这次设计？",
+    "mask_colour": "遮罩颜色",
+    "title": "Mania 视觉设计",
+    "note": "实时预览上隐与底部高度，保存时生成皮肤副本\n尺寸以 480 高度为基准",
+    "mask_group": "上隐遮罩",
+    "mask_height": "遮挡高度",
+    "mask_fade": "渐变高度",
+    "bottom_group": "球槽与判定位置",
+    "bottom_height": "底部加高",
+    "link_hit": "联动实际判定位置",
+    "bottom_hint": "加高会向上移动按键图像\n勾选联动时同步移动实际判定位置",
+    "reset": "重置本次设计",
+    "mask_height_tip": "从轨道顶端开始完全遮挡的高度",
+    "mask_fade_tip": "完整遮挡下方逐渐透明的过渡高度",
+    "bottom_height_tip": "相对原图增加底部留白并抬高按键图像",
+    "link_hit_tip": "取消联动时只移动图像，实际判定位置保持原值",
+    "invalid_parent": "请选择已有的保存文件夹",
+    "no_skin": "请先打开皮肤",
+    "unsaved_status": "设计已更新，尚未保存到皮肤副本",
+    "destination_exists": "该文件夹已存在，请换一个副本名称",
+    "scope": "{keys}K · {name}",
+    "original_status": "当前显示原始皮肤",
+    "export_failed": "无法保存皮肤副本",
+    "saved_status": "副本已保存到\n{path}"
   }
 }

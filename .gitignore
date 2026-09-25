@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.log
+.pytest_cache/
+work/
+outputs/
+*.exe
+*.zip
+*.osk
+__conflicts_backup/
+.skin_ini_history/
+skin.ini.bak
+assets/branding/xiaolan-original.png

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from pathlib import Path
 import json
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, QLocale
 
 _LANG = "en-US"
 _DICT = {}
@@ -21,13 +21,22 @@ def load_language(lang: str = None):
     global _LANG, _DICT
     settings = QSettings()
     if lang is None:
-        lang = settings.value("ui/language", "en-US", str)
+        default = "zh-CN" if QLocale.system().name().startswith("zh") else "en-US"
+        lang = settings.value("ui/language", default, str)
     lang = lang if lang in available_languages() else "en-US"
     _LANG = lang
     path = locales_dir() / f"{lang}.json"
     try:
         with open(path, "r", encoding="utf-8") as f:
             _DICT = json.load(f)
+        extra = locales_dir() / f"{lang}.add.json"
+        if extra.exists():
+            additions = json.loads(extra.read_text(encoding="utf-8"))
+            for key, value in additions.items():
+                if isinstance(value, dict) and isinstance(_DICT.get(key), dict):
+                    _DICT[key].update(value)
+                else:
+                    _DICT[key] = value
     except Exception:
         _DICT = {}
     settings.setValue("ui/language", _LANG)

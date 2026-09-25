@@ -1,8 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
+from pathlib import Path
+
+# Build only against this Python installation and Windows system libraries.
+# Unrelated SDKs on PATH can inject an incompatible ICU/UCRT into the bundle.
+# This changes the build process environment only, never the machine PATH.
+if sys.platform == 'win32':
+    system_root = Path(os.environ.get('SystemRoot', r'C:\Windows'))
+    os.environ['PATH'] = os.pathsep.join(dict.fromkeys([
+        str(Path(sys.executable).parent), str(Path(sys.base_prefix)),
+        str(system_root / 'System32'), str(system_root),
+    ]))
+
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
-datas = [('locales', 'locales'), ('i18n_patch', 'i18n_patch'), ('ico', 'ico')]
+datas = [('locales', 'locales'), ('i18n_patch', 'i18n_patch'), ('ico', 'ico'), ('assets', 'assets')]
 hiddenimports = ['PySide6.QtMultimedia']
 datas += collect_data_files('PIL')
 hiddenimports += collect_submodules('PIL')
@@ -42,5 +56,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['ico\\xiaolan.ico'],
+    icon=['assets/branding/xiaolan-tech.png'],
 )

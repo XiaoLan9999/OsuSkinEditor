@@ -1,3 +1,2 @@
-PySide6
-Pillow
-# watchdog  # 若要做“文件变动自动热重载”，后续再启用
+PySide6>=6.6,<7
+Pillow>=10.4,<13

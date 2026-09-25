@@ -7,11 +7,14 @@ from PIL import Image, ImageFilter, ImageChops
 
 def outline(img: Image.Image, px=3, color=(0,0,0,255)):
     """简单描边：对 alpha 做膨胀并上色，再与原图合成。"""
+    img = img.convert("RGBA")
+    px = max(0, int(px))
     a = img.split()[-1]                 # 提取 alpha 通道
     o = a
     for _ in range(px):
         o = o.filter(ImageFilter.MaxFilter(3))  # 膨胀 alpha
     edge = ImageChops.subtract(o, a)    # 得到“边框区域”
     rgba = Image.new("RGBA", img.size, color)
-    rgba.putalpha(edge)
+    opacity = color[3] if len(color) == 4 else 255
+    rgba.putalpha(edge.point(lambda value: round(value * opacity / 255)))
     return Image.alpha_composite(rgba, img)

@@ -1,12 +1,16 @@
 {
   "app": {
-    "title": "osu! XiaoLan Skin Editor v1.2"
+    "title": "osu! XiaoLan Skin Editor"
   },
   "menu": {
     "file": "File",
     "settings": "Settings",
     "language": "Language",
-    "recent_skins": "Recent Skins"
+    "recent_skins": "Recent Skins",
+    "std_settings": "Standard settings",
+    "mania_settings": "Mania settings",
+    "author": "About",
+    "assets": "Asset tools"
   },
   "action": {
     "open_skin_folder": "Open Skin Folder...",
@@ -16,14 +20,19 @@
     "set_osu_folder": "Set osu! Folder...",
     "exit": "Exit",
     "lang_en": "English",
-    "lang_zh": "中文 (Chinese)"
+    "lang_zh": "中文 (Chinese)",
+    "about_author": "About the author…",
+    "assets_images": "Manage images…",
+    "assets_audio": "Manage audio…",
+    "debug_show": "Show layer offset panel",
+    "mania_ini": "Edit Mania configuration"
   },
   "dialog": {
     "select_skin": "Select skin folder (contains skin.ini)",
     "select_osu_skin": "Select a skin under osu!/Skins",
     "select_osu_folder": "Select osu! folder (the one that contains 'Skins')",
     "not_osu_title": "Not an osu! folder",
-    "not_osu_msg": "Selected folder does not contain a 'Skins' subfolder."
+    "not_osu_msg": "Selected folder does not contain a 'Skins' subfolder"
   },
   "status": {
     "ready": "Ready",
@@ -31,7 +40,90 @@
     "osu_set": "osu! folder set: {path}"
   },
   "tab": {
-    "std": "STD Preview",
-    "mania": "Mania Preview"
+    "std": "osu!standard",
+    "mania": "osu!mania"
+  },
+  "workspace": {
+    "title": "XiaoLan Skin Editor",
+    "subtitle": "A workspace for the details that make your skin yours",
+    "open": "Open skin",
+    "folder": "Folder",
+    "reload": "Reload",
+    "images": "Images",
+    "audio": "Audio",
+    "mania_settings": "Mania settings",
+    "library": "ASSET LIBRARY",
+    "preview": "PREVIEW",
+    "demo": "DEMO SCENE",
+    "pause": "Pause",
+    "resume": "Resume",
+    "welcome_title": "Your skin workspace",
+    "welcome_description": "Open a skin folder to explore assets, edit settings,\nand preview Standard and Mania in motion",
+    "welcome_hint": "Drop a skin folder or skin.ini here  ·  Ctrl+O to open  ·  F5 to reload",
+    "osu_skins": "Browse osu! Skins",
+    "preview_note": "An asset and layer preview without a beatmap; verify the final result in osu!",
+    "flow_speed": "Scroll speed",
+    "demo_tempo": "Demo tempo",
+    "hit_guide": "Hit guide",
+    "design": "Skin design",
+    "restart": "Restart demo",
+    "flow_help": "Preview-only fixed scroll speed; not saved to skin.ini",
+    "search": "Search assets…",
+    "filter_all": "All images",
+    "filter_std": "Standard assets",
+    "filter_mania": "Mania assets",
+    "filter_other": "Interface & other assets",
+    "no_results": "No matching assets; try a different search or category",
+    "library_empty": "Open a skin to browse its images here",
+    "select_asset": "Select an asset to inspect its transparency",
+    "load_error": "Could not load skin",
+    "keys": "Preview keys",
+    "guide_help": "Show the actual hit position as a preview-only guide"
+  },
+  "preview": {
+    "open_hint": "Open a skin to begin previewing",
+    "no_hitcircle": "No hitcircle asset found",
+    "sample_pattern": "Sample pattern"
+  },
+  "links": {
+    "github": "GitHub project",
+    "steam": "Steam profile",
+    "bilibili": "Bilibili",
+    "blog": "Blog"
+  },
+  "designer": {
+    "export_title": "Save skin copy",
+    "export_note": "Copy the entire skin to a new folder and apply this design",
+    "browse": "Browse…",
+    "parent_folder": "Save to",
+    "copy_name": "Copy name",
+    "export": "Save skin copy",
+    "cancel": "Cancel",
+    "invalid_name": "Enter a valid name for the new folder",
+    "unsaved_title": "Unsaved design",
+    "unsaved_message": "This design has not been saved to a skin copy\nSave a copy before continuing, or discard this design?",
+    "mask_colour": "Mask colour",
+    "title": "Mania visual design",
+    "note": "Preview the top cover and bottom height, then save a skin copy\nDimensions use a 480-unit screen height",
+    "mask_group": "Top cover",
+    "mask_height": "Cover height",
+    "mask_fade": "Fade height",
+    "bottom_group": "Receptors and hit position",
+    "bottom_height": "Bottom extension",
+    "link_hit": "Move the actual hit position too",
+    "bottom_hint": "Extending the bottom moves key images upward\nEnable linking to also move the actual hit position",
+    "reset": "Reset this design",
+    "mask_height_tip": "Height of the fully opaque cover measured from the top of the lanes",
+    "mask_fade_tip": "Height of the transition from the opaque cover to transparency",
+    "bottom_height_tip": "Add space below the original image to lift the key image",
+    "link_hit_tip": "Disable linking to move only the image and keep the original hit position",
+    "invalid_parent": "Choose an existing destination folder",
+    "no_skin": "Open a skin first",
+    "unsaved_status": "Design updated, but not yet saved to a skin copy",
+    "destination_exists": "This folder already exists; choose a different copy name",
+    "scope": "{keys}K · {name}",
+    "original_status": "Showing the original skin",
+    "export_failed": "Could not save skin copy",
+    "saved_status": "Copy saved to\n{path}"
   }
 }

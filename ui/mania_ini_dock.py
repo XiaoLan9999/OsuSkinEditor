@@ -2,17 +2,20 @@
 # build: mania-ini-dock v6 — keep current K + dirty guard + snapshots + RGBA colors + history ops
 from pathlib import Path
 from datetime import datetime
+import os
+import tempfile
 
 from PySide6.QtWidgets import (
-    QWidget, QDockWidget, QLabel, QSpinBox, QLineEdit, QPushButton, QFormLayout,
-    QHBoxLayout, QVBoxLayout, QMessageBox, QComboBox, QCheckBox, QListWidget,
-    QFileDialog, QColorDialog
+    QWidget, QDockWidget, QLabel, QLineEdit, QPushButton, QFormLayout,
+    QHBoxLayout, QVBoxLayout, QMessageBox, QCheckBox, QListWidget,
+    QFileDialog, QColorDialog, QScrollArea, QGridLayout
 )
 from PySide6.QtGui import QColor, QDesktopServices, QKeySequence
 from PySide6.QtCore import Qt, QUrl, Signal
 
 from core.skin_ini import SkinIni, parse_list_csv
 from core import i18n
+from ui.widgets.wheel_guard import ClickWheelComboBox, ClickWheelSpinBox
 
 # ---------------- color helpers ----------------
 def _parse_rgba_text(s: str, default_alpha: int = 255):
@@ -36,10 +39,10 @@ def _parse_rgba_text(s: str, default_alpha: int = 255):
         parts = [p.strip() for p in s.replace(" ", "").split(",") if p.strip() != ""]
         if len(parts) == 3:
             r, g, b = map(int, parts); a = default_alpha
-            return (r, g, b, a)
+            return tuple(max(0, min(255, n)) for n in (r, g, b, a))
         if len(parts) == 4:
             r, g, b, a = map(int, parts)
-            return (r, g, b, a)
+            return tuple(max(0, min(255, n)) for n in (r, g, b, a))
     except Exception:
         pass
     return (0, 0, 0, default_alpha)
@@ -62,6 +65,18 @@ def _to_int(v, default=None):
     try: return int(v)
     except Exception: return default
 
+
+def _replace_bytes(path: Path, data: bytes):
+    """Preserve original encodings and avoid partial files on write failures."""
+    fd, temporary = tempfile.mkstemp(prefix=".skin-restore-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
 class ManiaIniDock(QDockWidget):
     """Mania INI editor with full settings, snapshots, hotkeys, K persistence, and dirty guard.
        This build writes Colour* as 'R,G,B,A' (RGBA numbers) to ensure your reader can parse it.
@@ -71,6 +86,7 @@ class ManiaIniDock(QDockWidget):
     def __init__(self, parent=None):
         super().__init__("Mania INI", parent)
         self.setObjectName("ManiaIniDock")
+        self.setMinimumWidth(310)
         self._skin_root: Path | None = None
         self._skin_ini: SkinIni | None = None
 
@@ -79,24 +95,40 @@ class ManiaIniDock(QDockWidget):
         self._dirty: bool = False
         self._blocking_key_change: bool = False  # prevent recursion when programmatically selecting
 
-        cw = QWidget(self); self.setWidget(cw)
+        cw = QWidget(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(cw)
+        self.setWidget(scroll)
         root_layout = QVBoxLayout(cw)
-        form = QFormLayout()
+        root_layout.setContentsMargins(14, 14, 14, 14)
+        root_layout.setSpacing(12)
+        form = QVBoxLayout()
+        form.setSpacing(8)
         root_layout.addLayout(form)
+
+        def add_row(label, field):
+            form.addWidget(label)
+            if isinstance(field, QWidget):
+                form.addWidget(field)
+            else:
+                form.addLayout(field)
+            form.addSpacing(5)
 
         # ----- Keys row (select existing / new) -----
         row_keys = QHBoxLayout()
-        self.cmb_keys = QComboBox(cw)     # existing keys from skin.ini
-        self.spn_keys = QSpinBox(cw); self.spn_keys.setRange(1, 18)  # new key count
+        self.cmb_keys = ClickWheelComboBox(cw)     # existing keys from skin.ini
+        self.spn_keys = ClickWheelSpinBox(cw); self.spn_keys.setRange(1, 18); self.spn_keys.setValue(4)
         self.lbl_keys = QLabel(); self.lbl_or_create = QLabel()
         row_keys.addWidget(self.cmb_keys)
         row_keys.addWidget(self.lbl_or_create)
         row_keys.addWidget(self.spn_keys)
-        form.addRow(self.lbl_keys, row_keys)
+        add_row(self.lbl_keys, row_keys)
 
         # ----- Basic numeric/bool controls -----
         def spn(minv, maxv, step=1, width=90):
-            s = QSpinBox(cw); s.setRange(minv, maxv); s.setSingleStep(step); s.setMaximumWidth(width); return s
+            s = ClickWheelSpinBox(cw); s.setRange(minv, maxv); s.setSingleStep(step); s.setMaximumWidth(width); return s
 
         self.chk_keys_under = QCheckBox(cw)
         self.spn_hit_pos = spn(-4096, 4096)
@@ -155,48 +187,54 @@ class ManiaIniDock(QDockWidget):
         self.le_col_spacing = QLineEdit(cw)
         self.le_col_line = QLineEdit(cw)
         # helpers: set-all for widths and line widths
-        self.spn_all_width = spn(0, 512); self.btn_apply_all_width = QPushButton(i18n.t("mania.apply_all_widths", "列宽一键填充"), cw)
+        self.spn_all_width = spn(1, 512); self.spn_all_width.setValue(30); self.btn_apply_all_width = QPushButton(i18n.t("mania.apply_all_widths", "列宽一键填充"), cw)
         self.spn_all_line  = spn(0, 128); self.btn_apply_all_line  = QPushButton(i18n.t("mania.apply_all_lines", "间隙线宽一键填充"), cw)
 
-        row_w = QHBoxLayout(); row_w.addWidget(self.le_col_width); row_w.addWidget(self.spn_all_width); row_w.addWidget(self.btn_apply_all_width)
-        row_l = QHBoxLayout(); row_l.addWidget(self.le_col_line);  row_l.addWidget(self.spn_all_line);  row_l.addWidget(self.btn_apply_all_line)
+        row_w = QVBoxLayout(); row_w.addWidget(self.le_col_width)
+        width_helper = QHBoxLayout(); width_helper.addWidget(self.spn_all_width); width_helper.addWidget(self.btn_apply_all_width); width_helper.addStretch()
+        row_w.addLayout(width_helper)
+        row_l = QVBoxLayout(); row_l.addWidget(self.le_col_line)
+        line_helper = QHBoxLayout(); line_helper.addWidget(self.spn_all_line); line_helper.addWidget(self.btn_apply_all_line); line_helper.addStretch()
+        row_l.addLayout(line_helper)
 
         # ----- Build form -----
-        form.addRow(QLabel(i18n.t("mania.col_width", "ColumnWidth（轨道宽度）")), row_w)
-        form.addRow(QLabel(i18n.t("mania.col_spacing", "ColumnSpacing（轨道间距）")), self.le_col_spacing)
-        form.addRow(QLabel(i18n.t("mania.line_width", "ColumnLineWidth（轨道间隙线宽）")), row_l)
+        add_row(QLabel(i18n.t("mania.col_width", "ColumnWidth（轨道宽度）")), row_w)
+        add_row(QLabel(i18n.t("mania.col_spacing", "ColumnSpacing（轨道间距）")), self.le_col_spacing)
+        add_row(QLabel(i18n.t("mania.line_width", "ColumnLineWidth（轨道间隙线宽）")), row_l)
 
-        form.addRow(QLabel(i18n.t("mania.keys_under", "KeysUnderNotes（按键画在音符下）")), self.chk_keys_under)
-        form.addRow(QLabel(i18n.t("mania.hit_pos", "HitPosition（打击线Y）")), self.spn_hit_pos)
-        form.addRow(QLabel(i18n.t("mania.barline_h", "BarlineHeight（小节线粗细）")), self.spn_barline_h)
-        form.addRow(QLabel(i18n.t("mania.score_pos", "ScorePosition（判定值Y）")), self.spn_score_pos)
-        form.addRow(QLabel(i18n.t("mania.combo_pos", "ComboPosition（连击数Y）")), self.spn_combo_pos)
-        form.addRow(QLabel(i18n.t("mania.col_start", "ColumnStart（左侧X）")), self.spn_col_start)
-        form.addRow(QLabel(i18n.t("mania.light_pos", "LightPosition（灯效Y）")), self.spn_light_pos)
-        form.addRow(QLabel(i18n.t("mania.light_fps", "LightFramePerSecond（灯效FPS）")), self.spn_light_fps)
-        form.addRow(QLabel(i18n.t("mania.judge_line", "JudgementLine（额外判定细线）")), self.chk_judge_line)
-        form.addRow(QLabel(i18n.t("mania.stage_hint", "StageHint（判定线图）")), row_stage)
-        form.addRow(QLabel(i18n.t("mania.warning_arrow", "WarningArrow（下落箭头）")), row_warn)
-        form.addRow(QLabel(i18n.t("mania.upside_down", "UpsideDown（上下颠倒）")), self.chk_upside_down)
-        form.addRow(QLabel(i18n.t("mania.colour_hold", "ColourHold（长条连击颜色）")), add_color_row(self.le_colour_hold))
-        form.addRow(QLabel(i18n.t("mania.colour_barline", "ColourBarline（小节线颜色）")), add_color_row(self.le_colour_barline))
-        form.addRow(QLabel(i18n.t("mania.light_nw", "LightingNWidth（单击灯效宽度）")), self.spn_light_nw)
-        form.addRow(QLabel(i18n.t("mania.light_lw", "LightingLWidth（长条灯效宽度）")), self.spn_light_lw)
+        add_row(QLabel(i18n.t("mania.keys_under", "KeysUnderNotes（按键画在音符下）")), self.chk_keys_under)
+        add_row(QLabel(i18n.t("mania.hit_pos", "HitPosition（打击线Y）")), self.spn_hit_pos)
+        add_row(QLabel(i18n.t("mania.barline_h", "BarlineHeight（小节线粗细）")), self.spn_barline_h)
+        add_row(QLabel(i18n.t("mania.score_pos", "ScorePosition（判定值Y）")), self.spn_score_pos)
+        add_row(QLabel(i18n.t("mania.combo_pos", "ComboPosition（连击数Y）")), self.spn_combo_pos)
+        add_row(QLabel(i18n.t("mania.col_start", "ColumnStart（左侧X）")), self.spn_col_start)
+        add_row(QLabel(i18n.t("mania.light_pos", "LightPosition（灯效Y）")), self.spn_light_pos)
+        add_row(QLabel(i18n.t("mania.light_fps", "LightFramePerSecond（灯效FPS）")), self.spn_light_fps)
+        add_row(QLabel(i18n.t("mania.judge_line", "JudgementLine（额外判定细线）")), self.chk_judge_line)
+        add_row(QLabel(i18n.t("mania.stage_hint", "StageHint（判定线图）")), row_stage)
+        add_row(QLabel(i18n.t("mania.warning_arrow", "WarningArrow（下落箭头）")), row_warn)
+        add_row(QLabel(i18n.t("mania.upside_down", "UpsideDown（上下颠倒）")), self.chk_upside_down)
+        add_row(QLabel(i18n.t("mania.colour_hold", "ColourHold（长条连击颜色）")), add_color_row(self.le_colour_hold))
+        add_row(QLabel(i18n.t("mania.colour_barline", "ColourBarline（小节线颜色）")), add_color_row(self.le_colour_barline))
+        add_row(QLabel(i18n.t("mania.light_nw", "LightingNWidth（单击灯效宽度）")), self.spn_light_nw)
+        add_row(QLabel(i18n.t("mania.light_lw", "LightingLWidth（长条灯效宽度）")), self.spn_light_lw)
 
         # ----- Buttons (I/O) -----
-        io_row = QHBoxLayout()
+        io_row = QGridLayout()
         self.btn_reload = QPushButton(i18n.t("mania.btn_reload", "从 skin.ini 读取"), cw)
         self.btn_save   = QPushButton(i18n.t("mania.btn_save",   "保存到 skin.ini"), cw)
         self.btn_restore= QPushButton(i18n.t("mania.btn_restore","恢复 .bak 备份"), cw)
-        io_row.addWidget(self.btn_reload); io_row.addWidget(self.btn_save); io_row.addWidget(self.btn_restore)
+        self.btn_save.setObjectName("PrimaryButton")
+        io_row.addWidget(self.btn_save, 0, 0, 1, 2)
+        io_row.addWidget(self.btn_reload, 1, 0); io_row.addWidget(self.btn_restore, 1, 1)
         root_layout.addLayout(io_row)
 
         # shortcuts
         self.btn_save.setShortcut(QKeySequence("Ctrl+S"))
-        self.btn_reload.setShortcut(QKeySequence("F5"))
+        self.btn_reload.setShortcut(QKeySequence("Ctrl+R"))
 
         # ----- Snapshot section -----
-        snap_row = QHBoxLayout()
+        snap_row = QVBoxLayout()
         self.btn_save_and_snap = QPushButton(i18n.t("mania.btn_save_and_snap", "保存并新建快照 (Ctrl+Shift+S)"), cw)
         self.btn_quick_snap   = QPushButton(i18n.t("mania.btn_quick_snap", "仅新建快照（不写入 ini）"), cw)
         snap_row.addWidget(self.btn_save_and_snap); snap_row.addWidget(self.btn_quick_snap)
@@ -208,15 +246,19 @@ class ManiaIniDock(QDockWidget):
         self.history = QListWidget(cw); self.history.setMaximumHeight(140)
         root_layout.addWidget(self.history)
 
-        hist_btns = QHBoxLayout()
+        hist_btns = QGridLayout()
         self.btn_hist_refresh   = QPushButton(i18n.t("mania.hist_refresh", "刷新列表"), cw)
         self.btn_hist_delete    = QPushButton(i18n.t("mania.hist_delete", "删除所选快照"), cw)
         self.btn_hist_restore   = QPushButton(i18n.t("mania.hist_restore", "从所选快照恢复"), cw)
         self.btn_hist_overwrite = QPushButton(i18n.t("mania.hist_overwrite", "用当前 ini 覆盖所选快照"), cw)
         self.btn_hist_open      = QPushButton(i18n.t("mania.hist_open", "打开快照文件夹"), cw)
-        for b in (self.btn_hist_refresh, self.btn_hist_delete, self.btn_hist_restore, self.btn_hist_overwrite, self.btn_hist_open):
-            hist_btns.addWidget(b)
+        for index, b in enumerate((self.btn_hist_refresh, self.btn_hist_delete, self.btn_hist_restore, self.btn_hist_overwrite, self.btn_hist_open)):
+            hist_btns.addWidget(b, index // 2, index % 2)
         root_layout.addLayout(hist_btns)
+        self.btn_hist_overwrite.setText(i18n.t("mania.hist_overwrite_short", "覆盖所选快照"))
+        self.btn_hist_overwrite.setToolTip(i18n.t("mania.hist_overwrite", "用当前 ini 覆盖所选快照"))
+        for label in cw.findChildren(QLabel):
+            label.setWordWrap(True)
 
         # ----- signals -----
         self.btn_reload.clicked.connect(self._on_reload_clicked)
@@ -279,15 +321,14 @@ class ManiaIniDock(QDockWidget):
             return True
         box = QMessageBox(self)
         box.setWindowTitle(i18n.t("mania.unsaved_title", "未保存"))
-        box.setText(i18n.t("mania.unsaved_text", "未保存，现在切换 Keys 将会丢失设置进度。"))
+        box.setText(i18n.t("mania.unsaved_text", "有未保存的配置更改，是否先保存？"))
         btn_save = box.addButton(i18n.t("mania.unsaved_save", "保存"), QMessageBox.AcceptRole)
         btn_discard = box.addButton(i18n.t("mania.unsaved_discard", "放弃更改"), QMessageBox.DestructiveRole)
         btn_cancel = box.addButton(i18n.t("mania.unsaved_cancel", "取消"), QMessageBox.RejectRole)
         box.exec()
         clicked = box.clickedButton()
         if clicked is btn_save:
-            self._on_save_clicked()
-            return True
+            return bool(self._on_save_clicked())
         elif clicked is btn_discard:
             self._clear_dirty()
             return True
@@ -311,8 +352,10 @@ class ManiaIniDock(QDockWidget):
             self._blocking_key_change = False
 
     # ---------- public ----------
-    def set_skin_root(self, root: Path | str | None):
+    def set_skin_root(self, root: Path | str | None, preferred_keys: int | None = None):
         if isinstance(root, str): root = Path(root)
+        if root != self._skin_root:
+            self._current_view_k = preferred_keys
         self._skin_root = root; self._skin_ini = None
         ini_path = self._resolve_ini_path()
         if not ini_path: self._set_fields_enabled(False); return
@@ -332,10 +375,10 @@ class ManiaIniDock(QDockWidget):
         p = Path(self._skin_root) / "skin.ini"
         return p if p.exists() else None
 
-    def _history_dir(self) -> Path | None:
+    def _history_dir(self, create=False) -> Path | None:
         if not self._skin_root: return None
         d = Path(self._skin_root) / ".skin_ini_history"
-        d.mkdir(exist_ok=True)
+        if create: d.mkdir(exist_ok=True)
         return d
 
     def _refresh_existing_keys(self):
@@ -347,8 +390,8 @@ class ManiaIniDock(QDockWidget):
         if prev and prev in keys:
             idx = keys.index(prev)
         else:
-            idx = 0 if keys else -1
-            prev = keys[0] if keys else (self.spn_keys.value() or 4)
+            prev = 4 if 4 in keys else 7 if 7 in keys else keys[0] if keys else 4
+            idx = keys.index(prev) if keys else -1
         self.cmb_keys.blockSignals(False)
 
         self._blocking_key_change = True
@@ -377,7 +420,14 @@ class ManiaIniDock(QDockWidget):
 
     def _load_values_for_current_keys(self):
         if not self._skin_ini: return
-        k = self._current_selected_keys(); d = self._skin_ini.mania_get(k)
+        k = self._current_selected_keys()
+        values = self._skin_ini.mania_get(k)
+        lower = {key.lower(): value for key, value in values.items()}
+        # Preserve source case but accept ordinary case-insensitive INI settings.
+        class CaseInsensitiveValues(dict):
+            def get(self, key, default=None):
+                return lower.get(key.lower(), default)
+        d = CaseInsensitiveValues()
 
         # lists
         self.le_col_width.setText(d.get("ColumnWidth", ""))
@@ -386,14 +436,14 @@ class ManiaIniDock(QDockWidget):
 
         # bools / ints / strings
         self.chk_keys_under.setChecked(_bool_from_any(d.get("KeysUnderNotes", False)))
-        self.spn_hit_pos.setValue(_to_int(d.get("HitPosition"), 420) or 420)
-        self.spn_barline_h.setValue(_to_int(d.get("BarlineHeight"), 1) or 1)
+        self.spn_hit_pos.setValue(_to_int(d.get("HitPosition"), 402))
+        self.spn_barline_h.setValue(_to_int(d.get("BarlineHeight"), 1))
         self.spn_score_pos.setValue(_to_int(d.get("ScorePosition"), 0) or 0)
         self.spn_combo_pos.setValue(_to_int(d.get("ComboPosition"), 0) or 0)
         self.spn_col_start.setValue(_to_int(d.get("ColumnStart"), 0) or 0)
         self.spn_light_pos.setValue(_to_int(d.get("LightPosition"), 0) or 0)
         self.spn_light_fps.setValue(_to_int(d.get("LightFramePerSecond"), 60) or 60)
-        self.chk_judge_line.setChecked(_bool_from_any(d.get("JudgementLine", False)))
+        self.chk_judge_line.setChecked(_bool_from_any(d.get("JudgementLine", True)))
         self.le_stage_hint.setText(d.get("StageHint", ""))
         self.le_warning_arrow.setText(d.get("WarningArrow", ""))
         self.chk_upside_down.setChecked(_bool_from_any(d.get("UpsideDown", False)))
@@ -407,6 +457,7 @@ class ManiaIniDock(QDockWidget):
 
         # record current K and clear dirty
         self._current_view_k = int(k)
+        self._loaded_updates = self._collect_updates(k)
         self._clear_dirty()
 
         # notify preview about current K
@@ -418,12 +469,9 @@ class ManiaIniDock(QDockWidget):
     def _collect_updates(self, k: int) -> dict:
         upd = {}
         # lists
-        if self.le_col_width.text().strip():
-            upd["ColumnWidth"] = parse_list_csv(self.le_col_width.text())
-        if self.le_col_spacing.text().strip():
-            upd["ColumnSpacing"] = parse_list_csv(self.le_col_spacing.text())
-        if self.le_col_line.text().strip():
-            upd["ColumnLineWidth"] = parse_list_csv(self.le_col_line.text())
+        upd["ColumnWidth"] = self.le_col_width.text().strip()
+        upd["ColumnSpacing"] = self.le_col_spacing.text().strip()
+        upd["ColumnLineWidth"] = self.le_col_line.text().strip()
 
         # bools / ints / strings
         upd["KeysUnderNotes"] = 1 if self.chk_keys_under.isChecked() else 0
@@ -465,14 +513,13 @@ class ManiaIniDock(QDockWidget):
 
     def _archive_snapshot(self):
         ini = self._resolve_ini_path()
-        d = self._history_dir()
-        if not ini or not d: return
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        d = self._history_dir(create=True)
+        if not ini or not d: raise OSError("No skin.ini is loaded")
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         dst = d / f"skin.ini.{ts}.bak"
-        try:
-            dst.write_text(ini.read_text(encoding="utf-8"), encoding="utf-8")
-        except Exception:
-            pass
+        with dst.open("xb") as stream:
+            stream.write(ini.read_bytes())
+        return dst
 
     # ----- slots -----
     def _on_apply_all_width(self):
@@ -487,6 +534,7 @@ class ManiaIniDock(QDockWidget):
 
     def _on_reload_clicked(self):
         if not self._skin_ini: return
+        if not self._confirm_discard_if_dirty(): return
         try:
             self._skin_ini = SkinIni.read(self._resolve_ini_path())
             # keep current K
@@ -497,7 +545,7 @@ class ManiaIniDock(QDockWidget):
                 self._reselect_current_k_in_widgets()
             self._load_values_for_current_keys()
             self._refresh_modified_time(); self._refresh_history_list()
-            QMessageBox.information(self, "Mania INI", "Reloaded from disk.")
+            QMessageBox.information(self, "Mania INI", "Reloaded from disk")
         except Exception as e:
             QMessageBox.warning(self, "Mania INI", f"Reload failed: {e}")
 
@@ -505,22 +553,44 @@ class ManiaIniDock(QDockWidget):
         self._on_save_clicked()
 
     def _on_snapshot_clicked(self):
-        self._archive_snapshot()
+        try:
+            self._archive_snapshot()
+        except OSError as e:
+            QMessageBox.warning(self, "Snapshot", f"Snapshot failed: {e}")
+            return
         self._refresh_history_list()
-        QMessageBox.information(self, "Snapshot", "已创建快照（未写入 ini）。")
+        QMessageBox.information(self, "Snapshot", "已创建快照（未写入 ini）")
 
     def _on_save_clicked(self):
-        if not self._skin_ini: return
+        if not self._skin_ini: return False
         # always save for the K that is currently being viewed
         curk = int(self._current_view_k if self._current_view_k is not None else self._current_selected_keys())
         updates = self._collect_updates(curk)
+        original = getattr(self, "_loaded_updates", {})
+        updates = {key: value for key, value in updates.items() if value != original.get(key)}
 
         try:
+            for name in ("ColumnWidth", "ColumnSpacing", "ColumnLineWidth"):
+                value = updates.get(name)
+                if value:
+                    parts = value.split(",")
+                    parsed = [int(part.strip()) for part in parts]
+                    if any(number < 0 or (name == "ColumnWidth" and number == 0) for number in parsed):
+                        raise ValueError(f"{name}: widths must be positive; spacing/line widths must be non-negative")
+                    updates[name] = parsed
             self._skin_ini.mania_set_values(curk, updates)
             self._skin_ini.save(create_backup=True)
-            self._archive_snapshot()
         except Exception as e:
-            QMessageBox.critical(self, "Mania INI", f"Save failed: {e}"); return
+            # Preserve dirty widgets for retry, but discard the failed in-memory mutation.
+            try: self._skin_ini = SkinIni.read(self._resolve_ini_path())
+            except OSError: pass
+            QMessageBox.critical(self, "Mania INI", f"Save failed: {e}"); return False
+
+        snapshot_error = None
+        try:
+            self._archive_snapshot()
+        except OSError as e:
+            snapshot_error = e
 
         # stay on current K after save
         self._clear_dirty()
@@ -537,16 +607,22 @@ class ManiaIniDock(QDockWidget):
         except Exception:
             pass
 
-        QMessageBox.information(self, "Mania INI", f"Saved for {curk}K，并已创建快照。")
+        if snapshot_error:
+            QMessageBox.warning(self, "Mania INI", f"Saved for {curk}K. Snapshot failed: {snapshot_error}")
+        else:
+            QMessageBox.information(self, "Mania INI", f"Saved for {curk}K，并已创建快照")
+        return True
 
     def _on_restore_clicked(self):
         ini = self._resolve_ini_path()
         if not ini: return
         bak = ini.with_suffix(ini.suffix + ".bak")
         if not bak.exists():
-            QMessageBox.information(self, "Restore", "No backup (.bak) found yet."); return
+            QMessageBox.information(self, "Restore", "No backup (.bak) found yet"); return
+        if not self._confirm_discard_if_dirty(): return
         try:
-            ini.write_text(bak.read_text(encoding="utf-8"), encoding="utf-8")
+            self._archive_snapshot()
+            _replace_bytes(ini, bak.read_bytes())
             self._skin_ini = SkinIni.read(ini)
             # keep current K
             curk = self._current_view_k
@@ -556,7 +632,7 @@ class ManiaIniDock(QDockWidget):
                 self._reselect_current_k_in_widgets()
             self._load_values_for_current_keys()
             self._refresh_modified_time(); self._refresh_history_list()
-            QMessageBox.information(self, "Restore", "Restored from .bak.")
+            QMessageBox.information(self, "Restore", "Restored from .bak")
         except Exception as e:
             QMessageBox.warning(self, "Restore", f"Restore failed: {e}")
 
@@ -565,11 +641,11 @@ class ManiaIniDock(QDockWidget):
         if not d: return
         item = self.history.currentItem()
         if not item:
-            QMessageBox.information(self, "Snapshot", i18n.t("mania.pick_snapshot", "请先选择要删除的快照。"))
+            QMessageBox.information(self, "Snapshot", i18n.t("mania.pick_snapshot", "请先选择要删除的快照"))
             return
         target = d / item.text()
         if not target.exists():
-            QMessageBox.warning(self, "Snapshot", i18n.t("mania.not_found", "未找到该快照文件。"))
+            QMessageBox.warning(self, "Snapshot", i18n.t("mania.not_found", "未找到该快照文件"))
             return
         r = QMessageBox.question(self, "Snapshot",
                                  i18n.t("mania.confirm_delete", f"确定要删除快照：\n{target.name} ？"),
@@ -579,7 +655,7 @@ class ManiaIniDock(QDockWidget):
         try:
             target.unlink()
             self._refresh_history_list()
-            QMessageBox.information(self, "Snapshot", i18n.t("mania.deleted", "已删除。"))
+            QMessageBox.information(self, "Snapshot", i18n.t("mania.deleted", "已删除"))
         except Exception as e:
             QMessageBox.warning(self, "Snapshot", i18n.t("mania.delete_fail", f"删除失败：{e}"))
 
@@ -597,6 +673,7 @@ class ManiaIniDock(QDockWidget):
         # proceed switch
         self._blocking_key_change = True
         try:
+            self.cmb_keys.setCurrentIndex(self.cmb_keys.findData(target_k))
             self.spn_keys.setValue(target_k)
         finally:
             self._blocking_key_change = False
@@ -620,6 +697,7 @@ class ManiaIniDock(QDockWidget):
         keys = self._skin_ini.available_mania_keys() if self._skin_ini else []
         self._blocking_key_change = True
         try:
+            self.spn_keys.setValue(target_k)
             if target_k in keys:
                 self.cmb_keys.setCurrentIndex(keys.index(target_k))
             else:
@@ -636,8 +714,10 @@ class ManiaIniDock(QDockWidget):
         path = d / item.text()
         ini = self._resolve_ini_path()
         if not ini or not path.exists(): return
+        if not self._confirm_discard_if_dirty(): return
         try:
-            ini.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+            self._archive_snapshot()
+            _replace_bytes(ini, path.read_bytes())
             self._skin_ini = SkinIni.read(ini)
             # keep current K
             curk = self._current_view_k
@@ -646,7 +726,7 @@ class ManiaIniDock(QDockWidget):
                 self._current_view_k = curk
                 self._reselect_current_k_in_widgets()
             self._load_values_for_current_keys()
-            self._refresh_modified_time()
+            self._refresh_modified_time(); self._refresh_history_list()
             QMessageBox.information(self, "Restore", f"Restored: {path.name}")
         except Exception as e:
             QMessageBox.warning(self, "Restore", f"Failed: {e}")
@@ -656,17 +736,17 @@ class ManiaIniDock(QDockWidget):
         if not d: return
         item = self.history.currentItem()
         if not item:
-            QMessageBox.information(self, "Overwrite", "请先在快照列表选择一项。")
+            QMessageBox.information(self, "Overwrite", "请先在快照列表选择一项")
             return
         target = d / item.text()
         ini = self._resolve_ini_path()
         if not ini or not target.exists():
-            QMessageBox.warning(self, "Overwrite", "未找到 skin.ini 或选中快照。"); return
+            QMessageBox.warning(self, "Overwrite", "未找到 skin.ini 或选中快照"); return
         r = QMessageBox.question(self, "Overwrite", f"确定要用当前 skin.ini 覆盖：\n{target.name} ？", QMessageBox.Yes | QMessageBox.No)
         if r != QMessageBox.Yes: return
         try:
-            target.write_text(ini.read_text(encoding="utf-8"), encoding="utf-8")
-            QMessageBox.information(self, "Overwrite", "已覆盖选中的快照。")
+            _replace_bytes(target, ini.read_bytes())
+            QMessageBox.information(self, "Overwrite", "已覆盖选中的快照")
         except Exception as e:
             QMessageBox.warning(self, "Overwrite", f"失败：{e}")
 

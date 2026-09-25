@@ -7,7 +7,7 @@ from core import i18n
 
 def _open(url: str, parent):
     if not url:
-        QMessageBox.information(parent, "Links", i18n.t("links.configure", "请在 core/app_links.py 填写链接后再试。"))
+        QMessageBox.information(parent, "Links", i18n.t("links.configure", "请在 core/app_links.py 填写链接后再试"))
         return
     QDesktopServices.openUrl(QUrl(url))
 

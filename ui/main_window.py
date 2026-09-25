@@ -4,10 +4,11 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QSplitter, QListWidget, QWidget, QVBoxLayout, QTabWidget,
-    QMessageBox, QMenu, QDockWidget, QPushButton, QHBoxLayout, QGridLayout, QLabel, QSpinBox, QCheckBox, QDialog, QDialogButtonBox
+    QMessageBox, QMenu, QDockWidget, QPushButton, QHBoxLayout, QGridLayout, QLabel, QSpinBox, QCheckBox, QDialog, QDialogButtonBox,
+    QFrame, QLineEdit, QComboBox, QStackedWidget, QListWidgetItem, QStyle, QSizePolicy, QToolButton
 )
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
-from PySide6.QtCore import Qt, QSettings, QByteArray, QTimer, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon, QImageReader, QPixmap, QKeySequence
+from PySide6.QtCore import Qt, QSettings, QByteArray, QTimer, QUrl, QSize
 from core.app_links import get_links
 from core import i18n
 
@@ -17,6 +18,11 @@ from pathlib import Path
 from ui.preview.std_preview import StdPreview
 from ui.preview.mania_preview import ManiaPreview
 from ui.mania_ini_dock import ManiaIniDock
+from ui.mania_design_dock import ManiaDesignDock
+from ui.mania_preview_controls import ManiaPreviewControls
+from ui.widgets.asset_inspector import AssetInspector
+from ui.widgets.identity import AvatarBadge, TechPanel, WelcomeCanvas
+from ui.icons import workspace_icon
 from core import i18n
 
 RECENT_LIMIT = 12
@@ -24,49 +30,34 @@ RECENT_LIMIT = 12
 
 class MainWindow(QMainWindow):
     def _open_assets_manager(self, tab: str = "image"):
-        """打开皮肤文件小工具：优先使用已加载皮肤目录；没有则引导选择。"""
-        from PySide6.QtWidgets import QMessageBox, QFileDialog
-        from pathlib import Path as _P
-        # 1) 尝试获取当前皮肤根目录
-        skin_root = None
-        for cand in (
-            getattr(self, "skin", None) and getattr(self.skin, "root", None),
-            getattr(self, "skin_loader", None) and getattr(self.skin_loader, "root", None),
-            getattr(self, "current_skin_dir", None),
-            getattr(self, "skin_dir", None),
-            getattr(self, "skin_root", None),
-        ):
-            if cand:
-                skin_root = cand
-                break
-        # 2) 不存在则引导选择并按主流程加载
-        if not skin_root or not _P(str(skin_root)).exists():
-            ret = QMessageBox.question(self, "未检测到皮肤目录", "现在选择一个皮肤文件夹吗？",
-                                       QMessageBox.Yes | QMessageBox.No)
-            if ret != QMessageBox.Yes:
-                return
-            start = getattr(self, "_start_dir_for_dialog", lambda: "")()
-            d = QFileDialog.getExistingDirectory(self, "选择皮肤文件夹", start)
-            if not d:
-                return
-            try:
-                if hasattr(self, "load_skin"):
-                    self.load_skin(d)
-                skin_root = d
-                try: self.current_skin_dir = d
-                except Exception: pass
-            except Exception as e:
-                QMessageBox.critical(self, "加载失败", f"加载皮肤失败：{e}")
-                return
-        # 3) 打开管理器
+        if not self.skin:
+            self.on_open_generic()
+        if not self.skin:
+            return
+        had_design = self.mania_design_dock._dirty
+        if not self._confirm_design_navigation():
+            return
+        if had_design:
+            self.mania_design_dock.reset_preview()
+        was_dirty = self.mania_ini_dock._dirty
+        if not self.mania_ini_dock._confirm_discard_if_dirty():
+            return
+        if was_dirty and not self.load_skin(str(self.skin.root), check_dirty=False):
+            return
         try:
-            dlg = AssetsManagerDialog(_P(str(skin_root)), self, start_tab=tab)
+            dlg = AssetsManagerDialog(self.skin.root, self, start_tab=tab)
+            changed = []
+            dlg.assets_changed.connect(lambda: changed.append(True))
             dlg.exec()
+            if changed:
+                self.load_skin(str(self.skin.root), check_dirty=False)
+            dlg.deleteLater()
         except Exception as e:
             QMessageBox.critical(self, "打开失败", f"打开皮肤文件小工具失败：{e}")
 
     def __init__(self):
         super().__init__()
+        self.setAnimated(False)
         i18n.load_language()
 
         self.skin = None
@@ -74,29 +65,7 @@ class MainWindow(QMainWindow):
         self.settings = QSettings()
         self.osu_root = self._load_osu_root()
 
-        # ---------- Central UI ----------
-        splitter = QSplitter(Qt.Horizontal, self)
-        self.asset_list = QListWidget()
-        self.asset_list.setMinimumWidth(280)
-
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-
-        self.tabs = QTabWidget()
-        self.std_preview = StdPreview()
-        self.mania_preview = ManiaPreview()
-        self.std_preview.setMinimumSize(800, 520)
-        self.mania_preview.setMinimumSize(800, 520)
-        self.tabs.addTab(self.std_preview, "")
-        self.tabs.addTab(self.mania_preview, "")
-        right_layout.addWidget(self.tabs)
-
-        splitter.addWidget(self.asset_list)
-        splitter.addWidget(right)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([320, 960])
-        self.setCentralWidget(splitter)
+        self._build_workspace()
 
         # ---------- Menus & Actions ----------
         menubar = self.menuBar()
@@ -133,6 +102,16 @@ class MainWindow(QMainWindow):
         self.act_reload.triggered.connect(self.reload_skin)
         self.act_set_osu.triggered.connect(self.on_set_osu_root)
         self.act_quit.triggered.connect(self.close)
+        self.act_open.setShortcut(QKeySequence.Open)
+        self.act_reload.setShortcut("F5")
+        self.act_quit.setShortcut(QKeySequence.Quit)
+        self.btn_open.clicked.connect(self.on_open_generic)
+        self.btn_welcome_open.clicked.connect(self.on_open_generic)
+        self.btn_welcome_osu.clicked.connect(self.on_open_osu_skins)
+        self.btn_images.clicked.connect(lambda: self._open_assets_manager("image"))
+        self.btn_audio.clicked.connect(lambda: self._open_assets_manager("audio"))
+        self.btn_reload.clicked.connect(self.reload_skin)
+        self.btn_folder.clicked.connect(self._reveal_skin)
 
         # 连接作者链接动作（点击后在浏览器打开）
         self.act_link_github.triggered.connect(lambda: QDesktopServices.openUrl(QUrl('https://github.com/XiaoLan9999/OsuSkinEditor')))
@@ -144,11 +123,28 @@ class MainWindow(QMainWindow):
         self.act_assets_audio.triggered.connect(lambda: self._open_assets_manager('audio'))
 
 
-        # language menu
+        # Keep language selection discoverable even when the current language
+        # is unfamiliar: this label deliberately stays bilingual.
         self.lang_menu = QMenu(self)
-        self.act_lang_en = QAction(self); self.act_lang_en.triggered.connect(lambda: self.on_change_language("en-US"))
-        self.act_lang_zh = QAction(self); self.act_lang_zh.triggered.connect(lambda: self.on_change_language("zh-CN"))
-        self.lang_menu.addAction(self.act_lang_en); self.lang_menu.addAction(self.act_lang_zh)
+        self.lang_group = QActionGroup(self)
+        self.lang_group.setExclusive(True)
+        self.act_lang_zh = QAction("中文", self)
+        self.act_lang_en = QAction("English", self)
+        for action, code in ((self.act_lang_zh, "zh-CN"), (self.act_lang_en, "en-US")):
+            action.setCheckable(True)
+            action.setData(code)
+            self.lang_group.addAction(action)
+            self.lang_menu.addAction(action)
+            action.triggered.connect(lambda checked=False, language=code: self.on_change_language(language))
+        self.language_button = QToolButton(menubar)
+        self.language_button.setObjectName("LanguageButton")
+        self.language_button.setText("语言 / Language")
+        self.language_button.setAccessibleName("语言 / Language")
+        self.language_button.setToolTip("语言 / Language")
+        self.language_button.setFocusPolicy(Qt.StrongFocus)
+        self.language_button.setPopupMode(QToolButton.InstantPopup)
+        self.language_button.setMenu(self.lang_menu)
+        menubar.setCornerWidget(self.language_button, Qt.TopRightCorner)
 
         # centering menu
         self.center_menu = QMenu(self)
@@ -174,7 +170,7 @@ class MainWindow(QMainWindow):
         # build menus（去掉 Settings 里的 “STD OFFSETS” 条目）
         self.file_menu.addAction(self.act_open); self.file_menu.addAction(self.act_open_osu); self.file_menu.addAction(self.act_open_last); self.file_menu.addMenu(self.recent_menu)
         self.file_menu.addAction(self.act_reload); self.file_menu.addSeparator(); self.file_menu.addAction(self.act_set_osu); self.file_menu.addSeparator(); self.file_menu.addAction(self.act_quit)
-        self.settings_menu.addMenu(self.lang_menu); self.settings_menu.addMenu(self.center_menu)
+        self.settings_menu.addMenu(self.center_menu)
         # 不再添加 self.act_offsets 到 Settings（它现在在 Debug 面板里）
 
         # ---------- Debug Dock ----------
@@ -202,14 +198,285 @@ class MainWindow(QMainWindow):
         self.act_mania_show.triggered.connect(lambda checked: self.mania_ini_dock.setVisible(bool(checked)))
         self.mania_ini_dock.visibilityChanged.connect(self.act_mania_show.setChecked)
         self.act_mania_show.setChecked(False)
+        self.btn_mania.clicked.connect(lambda: self.mania_ini_dock.setVisible(not self.mania_ini_dock.isVisible()))
+
+        self.mania_design_dock = ManiaDesignDock(self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.mania_design_dock)
+        self.tabifyDockWidget(self.mania_ini_dock, self.mania_design_dock)
+        self.mania_design_dock.hide()
+        self.mania_design_dock.design_changed.connect(self._apply_mania_design)
+        self.mania_design_dock.exported.connect(self._design_exported)
+        self.mania_design_dock.before_export = self._prepare_design_export
+        self.act_design_show = QAction(self)
+        self.act_design_show.triggered.connect(self._show_designer)
+        self.mania_menu.addAction(self.act_design_show)
+        self.btn_design.clicked.connect(self._show_designer)
+        self.mania_playback.speed_changed.connect(self._change_mania_speed)
+        self.mania_playback.tempo_changed.connect(self._change_mania_tempo)
+        self.mania_playback.guide_changed.connect(self.mania_preview.set_show_hit_guide)
+        self.mania_playback.restart_requested.connect(self.mania_preview.restart_demo)
+        self.mania_playback.keys_requested.connect(self._request_mania_keys)
+        self.mania_playback.speed.setValue(self.settings.value("preview/mania_speed", 20, int))
+        self.mania_playback.tempo.setValue(self.settings.value("preview/mania_tempo", 120, int))
+        self.mania_preview.set_scroll_speed(self.mania_playback.speed.value())
+        self.mania_preview.set_demo_bpm(self.mania_playback.tempo.value())
 
         self._refresh_recent_menu()
         self.retranslate()
         self.statusBar().showMessage(i18n.t("status.ready", "Ready"))
         self._restore_or_default_geometry()
+        self._sync_skin_ui()
+        self.setAcceptDrops(True)
 
         # 强制启动时隐藏两个面板（即使恢复了上次布局）
         QTimer.singleShot(0, self._force_hide_debug_and_mania)
+
+    def _build_workspace(self):
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(20, 16, 20, 6)
+        layout.setSpacing(16)
+        header = TechPanel("Header")
+        header_row = QHBoxLayout(header); header_row.setContentsMargins(18, 16, 18, 16)
+        self.brand_avatar = AvatarBadge(72)
+        header_row.addWidget(self.brand_avatar)
+        header_row.setSpacing(16)
+        titles = QVBoxLayout(); titles.setSpacing(3)
+        eyebrow = QLabel("XIAOLAN  /  SKIN EDITOR"); eyebrow.setObjectName("Eyebrow")
+        self.skin_title = QLabel(); self.skin_title.setObjectName("Title")
+        self.skin_title.setTextFormat(Qt.PlainText)
+        self.skin_title.setMinimumWidth(0); self.skin_title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.skin_path = QLabel(); self.skin_path.setObjectName("SkinPath")
+        self.skin_path.setTextFormat(Qt.PlainText)
+        self.skin_path.setMinimumWidth(0); self.skin_path.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        titles.addWidget(eyebrow); titles.addWidget(self.skin_title); titles.addWidget(self.skin_path)
+        header_row.addLayout(titles, 1)
+        self.btn_folder = QPushButton(); self.btn_reload = QPushButton(); self.btn_open = QPushButton()
+        self.btn_open.setObjectName("PrimaryButton")
+        for button, icon in ((self.btn_folder, "folder"), (self.btn_reload, "reload"), (self.btn_open, "open")):
+            button.setIcon(workspace_icon(icon)); header_row.addWidget(button)
+        layout.addWidget(header)
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(12)
+        sidebar = TechPanel("Sidebar"); sidebar.setMinimumWidth(240)
+        sidebar_layout = QVBoxLayout(sidebar); sidebar_layout.setContentsMargins(14, 16, 14, 14); sidebar_layout.setSpacing(12)
+        list_heading = QHBoxLayout()
+        self.library_label = QLabel(); self.library_label.setObjectName("SectionTitle")
+        self.asset_count = QLabel("0"); self.asset_count.setObjectName("Counter")
+        list_heading.addWidget(self.library_label); list_heading.addStretch(); list_heading.addWidget(self.asset_count)
+        sidebar_layout.addLayout(list_heading)
+        self.asset_search = QLineEdit(); self.asset_search.setClearButtonEnabled(True)
+        self.asset_search.textChanged.connect(self._filter_assets)
+        sidebar_layout.addWidget(self.asset_search)
+        self.asset_filter = QComboBox()
+        for key in ("all", "std", "mania", "other"): self.asset_filter.addItem(key, key)
+        self.asset_filter.currentIndexChanged.connect(self._filter_assets)
+        sidebar_layout.addWidget(self.asset_filter)
+        self.asset_list = QListWidget(); self.asset_list.setIconSize(QSize(36, 36)); self.asset_list.setSpacing(1)
+        self.asset_list.currentItemChanged.connect(self._inspect_asset)
+        sidebar_layout.addWidget(self.asset_list, 1)
+        self.no_results = QLabel(); self.no_results.setObjectName("Muted"); self.no_results.setWordWrap(True)
+        sidebar_layout.addWidget(self.no_results)
+        self.asset_inspector = AssetInspector(); sidebar_layout.addWidget(self.asset_inspector)
+        self.asset_details = QLabel(); self.asset_details.setObjectName("Muted"); self.asset_details.setWordWrap(True); self.asset_details.setTextFormat(Qt.PlainText)
+        sidebar_layout.addWidget(self.asset_details)
+        tools = QHBoxLayout(); self.btn_images = QPushButton(); self.btn_audio = QPushButton()
+        tools.addWidget(self.btn_images); tools.addWidget(self.btn_audio); sidebar_layout.addLayout(tools)
+        self.splitter.addWidget(sidebar)
+        preview_panel = TechPanel("PreviewPanel")
+        preview_layout = QVBoxLayout(preview_panel); preview_layout.setContentsMargins(18, 16, 18, 14); preview_layout.setSpacing(12)
+        preview_heading = QHBoxLayout()
+        self.preview_label = QLabel(); self.preview_label.setObjectName("SectionTitle")
+        self.preview_badge = QLabel(); self.preview_badge.setObjectName("Badge")
+        preview_heading.addWidget(self.preview_label); preview_heading.addWidget(self.preview_badge); preview_heading.addStretch()
+        self.btn_pause = QPushButton(); self.btn_pause.setCheckable(True); self.btn_pause.toggled.connect(self._set_paused)
+        self.preview_zoom = QComboBox()
+        for percent in (50, 75, 100, 125, 150, 200, 300):
+            self.preview_zoom.addItem(f"{percent}%", percent / 100.0)
+        self.preview_zoom.setCurrentIndex(2)
+        self.preview_zoom.currentIndexChanged.connect(lambda: self.std_preview.set_preview_scale(self.preview_zoom.currentData()))
+        preview_heading.addWidget(self.preview_zoom)
+        self.btn_mania = QPushButton()
+        self.btn_design = QPushButton()
+        self.btn_design.setObjectName("PrimaryButton")
+        preview_heading.addWidget(self.btn_pause); preview_heading.addWidget(self.btn_mania); preview_heading.addWidget(self.btn_design)
+        preview_layout.addLayout(preview_heading)
+        self.mania_playback = ManiaPreviewControls()
+        preview_layout.addWidget(self.mania_playback)
+        self.mania_playback.hide()
+        self.preview_stack = QStackedWidget()
+        welcome = WelcomeCanvas(); welcome_layout = QVBoxLayout(welcome); welcome_layout.setAlignment(Qt.AlignCenter); welcome_layout.setSpacing(16)
+        welcome.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Ignored)
+        self.welcome_avatar = AvatarBadge(144)
+        welcome_layout.addWidget(self.welcome_avatar, 0, Qt.AlignHCenter)
+        welcome_kicker = QLabel("XIAOLAN  /  SKIN WORKSPACE")
+        welcome_kicker.setObjectName("SectionCode"); welcome_kicker.setAlignment(Qt.AlignCenter)
+        welcome_layout.addWidget(welcome_kicker)
+        self.welcome_title = QLabel(); self.welcome_title.setObjectName("WelcomeTitle"); self.welcome_title.setAlignment(Qt.AlignCenter)
+        self.welcome_description = QLabel(); self.welcome_description.setObjectName("WelcomeDescription"); self.welcome_description.setAlignment(Qt.AlignCenter); self.welcome_description.setWordWrap(True)
+        welcome_layout.addWidget(self.welcome_title); welcome_layout.addWidget(self.welcome_description)
+        welcome_actions = QHBoxLayout(); welcome_actions.addStretch()
+        self.btn_welcome_open = QPushButton(); self.btn_welcome_open.setObjectName("PrimaryButton")
+        self.btn_welcome_osu = QPushButton()
+        welcome_actions.addWidget(self.btn_welcome_open); welcome_actions.addWidget(self.btn_welcome_osu); welcome_actions.addStretch()
+        welcome_layout.addLayout(welcome_actions)
+        self.welcome_hint = QLabel(); self.welcome_hint.setObjectName("WelcomeHint"); self.welcome_hint.setAlignment(Qt.AlignCenter); self.welcome_hint.setWordWrap(True)
+        welcome_layout.addWidget(self.welcome_hint)
+        self.preview_stack.addWidget(welcome)
+        self.tabs = QTabWidget()
+        self.std_preview = StdPreview(); self.mania_preview = ManiaPreview()
+        self.std_preview.setMinimumSize(380, 270); self.mania_preview.setMinimumSize(380, 270)
+        self.tabs.addTab(self.std_preview, "osu!standard"); self.tabs.addTab(self.mania_preview, "osu!mania")
+        self.tabs.currentChanged.connect(self._preview_mode_changed)
+        self.preview_stack.addWidget(self.tabs)
+        preview_layout.addWidget(self.preview_stack, 1)
+        self.preview_note = QLabel(); self.preview_note.setObjectName("Muted"); self.preview_note.setWordWrap(True)
+        preview_layout.addWidget(self.preview_note)
+        self.splitter.addWidget(preview_panel); self.splitter.setStretchFactor(0, 0); self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([292, 920])
+        layout.addWidget(self.splitter, 1)
+        self.setCentralWidget(central)
+
+    def _preview_mode_changed(self, index):
+        self.preview_zoom.setVisible(index == 0)
+        self.mania_playback.setVisible(index == 1 and self.skin is not None)
+        self.btn_mania.setVisible(index == 1)
+        self.btn_design.setVisible(index == 1)
+
+    def _change_mania_speed(self, speed):
+        self.mania_preview.set_scroll_speed(speed)
+        self.settings.setValue("preview/mania_speed", speed)
+
+    def _change_mania_tempo(self, tempo):
+        self.mania_preview.set_demo_bpm(tempo)
+        self.settings.setValue("preview/mania_tempo", tempo)
+
+    def _show_designer(self):
+        if self.skin is None:
+            return
+        self.tabs.setCurrentIndex(1)
+        self.mania_design_dock.show()
+        self.mania_design_dock.raise_()
+
+    def _confirm_design_navigation(self):
+        self._guarding_design = True
+        try:
+            return self.mania_design_dock.confirm_discard_if_dirty()
+        finally:
+            self._guarding_design = False
+
+    def _apply_mania_design(self, design):
+        try:
+            self.mania_preview.set_design_options(design)
+        except (ValueError, OSError) as error:
+            self.mania_design_dock.set_preview_error(str(error))
+        else:
+            self.mania_design_dock.set_preview_error("")
+
+    def _prepare_design_export(self):
+        if not self.mania_ini_dock._confirm_discard_if_dirty():
+            return False
+        # Refresh disk values without clearing the virtual design being exported.
+        current_keys = self.mania_design_dock._keys
+        self._syncing_mania_keys = True
+        try:
+            self.mania_ini_dock._current_view_k = current_keys
+            self.mania_ini_dock.set_skin_root(self.skin.root, preferred_keys=current_keys)
+            self.mania_preview.set_keys(current_keys)
+            self._apply_mania_design(self.mania_design_dock.options())
+        finally:
+            self._syncing_mania_keys = False
+        return True
+
+    def _design_exported(self, directory):
+        if getattr(self, "_guarding_design", False):
+            self.statusBar().showMessage(i18n.t("status.loaded", "Loaded: {path}").format(path=directory), 7000)
+            return
+        selected_keys = self.mania_design_dock._keys
+        self.load_skin(directory, check_dirty=False)
+        self._request_mania_keys(selected_keys)
+        self.tabs.setCurrentIndex(1)
+
+    def _refresh_playback_keys(self):
+        available = self.mania_ini_dock._skin_ini.available_mania_keys() if self.mania_ini_dock._skin_ini else []
+        self.mania_playback.set_keys(available, self.mania_preview.keys)
+
+    def _request_mania_keys(self, keys):
+        index = self.mania_ini_dock.cmb_keys.findData(keys)
+        if index >= 0:
+            self.mania_ini_dock.cmb_keys.setCurrentIndex(index)
+        else:
+            self._apply_mania_keys(keys)
+        self._refresh_playback_keys()
+
+    def _set_paused(self, paused):
+        self.std_preview.set_playing(not paused)
+        self.mania_preview.set_playing(not paused)
+        self.btn_pause.setText(i18n.t("workspace.resume" if paused else "workspace.pause"))
+
+    def _sync_skin_ui(self):
+        loaded = self.skin is not None
+        self.preview_stack.setCurrentIndex(1 if loaded else 0)
+        for control in (self.btn_folder, self.btn_reload, self.btn_images, self.btn_audio, self.btn_pause,
+                        self.btn_mania, self.btn_design, self.mania_playback, self.act_design_show,
+                        self.preview_zoom, self.asset_search, self.asset_filter, self.act_reload,
+                        self.act_assets_images, self.act_assets_audio, self.act_mania_show, self.act_debug_show):
+            control.setEnabled(loaded)
+        self.act_open_last.setEnabled(bool(self.settings.value("paths/last_skin", "", str)))
+        if loaded:
+            general = next((s for s in self.skin.ini.sections() if s.casefold() == "general"), None)
+            info = {k.lower(): v for k, v in self.skin.ini.items(general)} if general else {}
+            self.skin_title.setText(info.get("name") or self.skin.root.name)
+            self.skin_path.setText(str(self.skin.root)); self.skin_path.setToolTip(str(self.skin.root))
+        else:
+            self.skin_title.setText(i18n.t("workspace.title"))
+            self.skin_path.setText(i18n.t("workspace.subtitle"))
+        self._filter_assets()
+        self._preview_mode_changed(self.tabs.currentIndex())
+
+    def _filter_assets(self, *args):
+        needle = self.asset_search.text().strip().casefold()
+        category = self.asset_filter.currentData()
+        visible = 0
+        for n in range(self.asset_list.count()):
+            item = self.asset_list.item(n)
+            name = item.data(Qt.UserRole).casefold()
+            group = "mania" if name.startswith("mania-") else ("std" if name.startswith(("hit", "cursor", "slider", "approach", "default-", "score-", "reversearrow", "followpoint", "spinner")) else "other")
+            show = (category == "all" or group == category) and needle in item.text().casefold()
+            item.setHidden(not show); visible += int(show)
+        self.asset_count.setText(f"{visible} / {self.asset_list.count()}")
+        self.no_results.setText(i18n.t("workspace.no_results" if self.skin else "workspace.library_empty"))
+        self.no_results.setVisible(visible == 0)
+        selected = self.asset_list.currentItem()
+        if selected and selected.isHidden():
+            self.asset_list.setCurrentRow(-1)
+
+    def _inspect_asset(self, current=None, previous=None):
+        asset = self.skin.assets.get(current.data(Qt.UserRole)) if current and self.skin else None
+        self.asset_inspector.set_asset(asset.path if asset else None)
+        if not asset:
+            self.asset_details.setText(""); return
+        size = self.asset_inspector.image_size
+        self.asset_details.setText(f"{asset.path.name}\n{size.width()} × {size.height()} px  ·  {'@2x' if asset.scale == 2 else '1x'}")
+
+    def _reveal_skin(self):
+        if self.skin: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.skin.root)))
+
+    @staticmethod
+    def _dropped_skin(mime):
+        urls = mime.urls() if mime.hasUrls() else []
+        if len(urls) != 1 or not urls[0].isLocalFile(): return None
+        path = Path(urls[0].toLocalFile())
+        if path.is_file() and path.name.lower() == "skin.ini": path = path.parent
+        return path if path.is_dir() and (path / "skin.ini").is_file() else None
+
+    def dragEnterEvent(self, event):
+        if self._dropped_skin(event.mimeData()): event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        path = self._dropped_skin(event.mimeData())
+        if path and self.load_skin(str(path)): event.acceptProposedAction()
 
     def _force_hide_debug_and_mania(self):
         try:
@@ -218,6 +485,7 @@ class MainWindow(QMainWindow):
         try:
             self.mania_ini_dock.hide(); self.act_mania_show.setChecked(False)
         except Exception: pass
+        self.mania_design_dock.hide()
 
     def _init_debug_dock(self):
         dock = QDockWidget("Debug", self); dock.setObjectName("DebugDock")
@@ -287,7 +555,7 @@ class MainWindow(QMainWindow):
                 "link_num": 1 if self.chk_link_num.isChecked() else 0,
             }
             self.settings.setValue(f"std_offsets/{sid}", data)
-            self.statusBar().showMessage("Saved offsets for this skin.", 2000)
+            self.statusBar().showMessage("Saved offsets for this skin", 2000)
 
         self.btn_reset.clicked.connect(do_reset)
         self.btn_save.clicked.connect(do_save)
@@ -335,6 +603,12 @@ class MainWindow(QMainWindow):
             self.resize(1280, 800)
 
     def closeEvent(self, event):
+        if not self.mania_ini_dock._confirm_discard_if_dirty():
+            event.ignore()
+            return
+        if not self._confirm_design_navigation():
+            event.ignore()
+            return
         # 仍保存窗口布局，但界面启动后会强制隐藏两个调试类面板
         self.settings.setValue("ui/geometry", self.saveGeometry())
         self.settings.setValue("ui/state", self.saveState())
@@ -342,23 +616,33 @@ class MainWindow(QMainWindow):
 
     
     def _apply_mania_keys(self, k: int):
-        # Try several common method names on ManiaPreview to set lane count.
-        for name in ("set_keys", "setKeyCount", "set_keys_count", "set_lane_count", "setLanes"):
-            if hasattr(self.mania_preview, name):
+        if getattr(self, "_syncing_mania_keys", False):
+            return
+        previous = self.mania_preview.keys
+        self._syncing_mania_keys = True
+        try:
+            if hasattr(self, "mania_design_dock") and not getattr(self, "_loading_skin", False):
+                self._guarding_design = True
                 try:
-                    getattr(self.mania_preview, name)(int(k))
+                    accepted = self.mania_design_dock.set_keys(int(k))
+                finally:
+                    self._guarding_design = False
+                if not accepted:
+                    self.mania_ini_dock._current_view_k = previous
+                    self.mania_ini_dock._reselect_current_k_in_widgets()
+                    self.mania_ini_dock._load_values_for_current_keys()
+                    self._refresh_playback_keys()
                     return
-                except Exception:
-                    pass
-        # Fallback: set attribute and update
-        try:
-            setattr(self.mania_preview, "keys", int(k))
-        except Exception:
-            pass
-        try:
-            self.mania_preview.update()
-        except Exception:
-            pass
+            self.mania_preview.set_keys(int(k))
+            if hasattr(self, "mania_design_dock") and not getattr(self, "_loading_skin", False):
+                self._apply_mania_design(self.mania_design_dock.options())
+            if self.mania_ini_dock._current_view_k != int(k):
+                self.mania_ini_dock._current_view_k = int(k)
+                self.mania_ini_dock._reselect_current_k_in_widgets()
+                self.mania_ini_dock._load_values_for_current_keys()
+            self._refresh_playback_keys()
+        finally:
+            self._syncing_mania_keys = False
     # ---------- i18n ----------
 
     def _show_author_info_dialog(self):
@@ -392,7 +676,7 @@ class MainWindow(QMainWindow):
         self.debug_menu.setTitle(i18n.t("menu.std_settings", "Std 设置(仍在开发中)"))
         self.mania_menu.setTitle(i18n.t("menu.mania_settings", "Mania 设置"))
         self.recent_menu.setTitle(i18n.t("menu.recent_skins", "Recent skins"))
-        self.lang_menu.setTitle(i18n.t("menu.language", "Language"))
+        self.lang_menu.setTitle("语言 / Language")
         self.center_menu.setTitle(i18n.t("menu.centering", "Centering"))
 
         self.author_menu.setTitle(i18n.t("menu.author", "作者"))
@@ -412,8 +696,10 @@ class MainWindow(QMainWindow):
         self.act_reload.setText(i18n.t("action.reload", "Reload"))
         self.act_set_osu.setText(i18n.t("action.set_osu_folder", "Set osu! Folder…"))
         self.act_quit.setText(i18n.t("action.exit", "Exit"))
-        self.act_lang_en.setText(i18n.t("action.lang_en", "English"))
-        self.act_lang_zh.setText(i18n.t("action.lang_zh", "简体中文"))
+        for action in self.lang_group.actions():
+            action.setChecked(action.data() == i18n.lang())
+        self.act_center_image.setText(i18n.t("action.center_image", "Approach center: Image"))
+        self.act_center_alpha.setText(i18n.t("action.center_alpha", "Approach center: Alpha"))
 
         # actions under menus
         self.act_debug_show.setText(i18n.t("action.debug_show", "显示 STD 调试面板"))
@@ -422,6 +708,28 @@ class MainWindow(QMainWindow):
         # tabs
         self.tabs.setTabText(0, i18n.t("tab.std", "STD"))
         self.tabs.setTabText(1, i18n.t("tab.mania", "MANIA"))
+        for widget, key in (
+            (self.btn_open, "open"), (self.btn_welcome_open, "open"), (self.btn_folder, "folder"),
+            (self.btn_reload, "reload"), (self.btn_images, "images"), (self.btn_audio, "audio"),
+            (self.btn_mania, "mania_settings"), (self.library_label, "library"),
+            (self.preview_label, "preview"), (self.preview_badge, "demo"),
+            (self.welcome_title, "welcome_title"), (self.welcome_description, "welcome_description"),
+            (self.welcome_hint, "welcome_hint"), (self.btn_welcome_osu, "osu_skins"),
+            (self.preview_note, "preview_note"),
+        ):
+            widget.setText(i18n.t("workspace." + key))
+        self.asset_search.setPlaceholderText(i18n.t("workspace.search"))
+        self.btn_design.setText(i18n.t("workspace.design", "皮肤设计"))
+        self.act_design_show.setText(i18n.t("workspace.design", "皮肤设计"))
+        self.mania_playback.retranslate()
+        self.mania_design_dock.retranslate()
+        self.preview_zoom.setToolTip(i18n.t("workspace.zoom", "Standard preview zoom"))
+        for index, key in enumerate(("all", "std", "mania", "other")):
+            self.asset_filter.setItemText(index, i18n.t("workspace.filter_" + key))
+        self.asset_inspector.placeholder = i18n.t("workspace.select_asset")
+        self._set_paused(self.btn_pause.isChecked())
+        self._inspect_asset(self.asset_list.currentItem())
+        self._sync_skin_ui()
 
         # propagate to Mania dock
         try:
@@ -496,27 +804,53 @@ class MainWindow(QMainWindow):
         d=QFileDialog.getExistingDirectory(self, i18n.t("dialog.select_osu_folder", "Select osu! folder"), start)
         if d:
             if not (Path(d)/"Skins").exists():
-                QMessageBox.warning(self, i18n.t("dialog.not_osu_title", "Not osu!"), i18n.t("dialog.not_osu_msg", "This folder does not contain a 'Skins' subfolder.")); return
+                QMessageBox.warning(self, i18n.t("dialog.not_osu_title", "Not osu!"), i18n.t("dialog.not_osu_msg", "This folder does not contain a 'Skins' subfolder")); return
             self._remember_osu_root(d); self.statusBar().showMessage(i18n.t("status.osu_set", "osu! folder set: {path}").format(path=d), 5000)
 
-    def load_skin(self, directory:str):
-        try: self.skin=self.loader.load(directory)
+    def load_skin(self, directory: str, check_dirty=True):
+        # A failed folder selection must preserve the current workspace.
+        try: candidate = self.loader.load(directory)
         except Exception as e:
-            QMessageBox.critical(self,"Load Error",f"Failed to load skin: {e}"); return
+            QMessageBox.critical(self, i18n.t("workspace.load_error"), str(e)); return False
+        if check_dirty and not self.mania_ini_dock._confirm_discard_if_dirty():
+            return False
+        if check_dirty and not self._confirm_design_navigation():
+            return False
+        # Confirmation may have saved the same INI; load its current contents.
+        try: candidate = self.loader.load(directory)
+        except Exception as e:
+            QMessageBox.critical(self, i18n.t("workspace.load_error"), str(e)); return False
+        selected = self.asset_list.currentItem()
+        selected_name = selected.data(Qt.UserRole) if selected else None
+        self.skin = candidate
         self.asset_list.clear()
-        for name in sorted(self.skin.assets.keys()):
-            a=self.skin.assets[name]; self.asset_list.addItem(f"{name}  ({a.scale}x) - {a.path.name}")
+        for name in sorted(self.skin.assets, key=str.casefold):
+            asset = self.skin.assets[name]
+            item = QListWidgetItem(asset.path.name)
+            item.setData(Qt.UserRole, name); item.setToolTip(str(asset.path))
+            reader = QImageReader(str(asset.path)); size = reader.size()
+            if size.isValid(): reader.setScaledSize(size.scaled(48, 48, Qt.KeepAspectRatio))
+            item.setIcon(QIcon(QPixmap.fromImage(reader.read())))
+            item.setSizeHint(QSize(180, 48))
+            self.asset_list.addItem(item)
+            if name == selected_name: self.asset_list.setCurrentItem(item)
+        self._loading_skin = True
         self.std_preview.set_skin(self.skin); self.mania_preview.set_skin(self.skin)
         # 让 Mania INI dock 知道当前皮肤根目录
         try:
             root_path = getattr(self.skin, "root", None)
             if root_path:
-                self.mania_ini_dock.set_skin_root(root_path)
+                self.mania_ini_dock.set_skin_root(root_path, preferred_keys=self.skin.mode_keys)
         except Exception:
             pass
+        self._loading_skin = False
+        self.mania_design_dock.set_skin(self.skin, self.mania_preview.keys, force=True)
+        self._refresh_playback_keys()
         self.statusBar().showMessage(i18n.t("status.loaded", "Loaded: {path}").format(path=directory), 5000)
         self._remember_last_skin(directory)
         self._refresh_debug_panel_from_settings()
+        self._sync_skin_ui()
+        return True
 
     def reload_skin(self):
         if not self.skin: return
@@ -538,4 +872,4 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'mania_preview') and hasattr(self.mania_preview, 'set_keys'):
                 self.mania_ini_dock.keys_changed.connect(self.mania_preview.set_keys)
         self.mania_ini_dock.setVisible(on)
-        self.act_mania_ini.setChecked(on)
+        self.act_mania_show.setChecked(on)
