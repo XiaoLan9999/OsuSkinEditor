@@ -362,7 +362,10 @@ class UpdateService(QObject):
             if not target or transfer.redirects > MAX_REDIRECTS:
                 self._fail(transfer, "The update redirect chain is invalid")
                 return
-            redirected = QUrl(transfer.url).resolved(QUrl(target)).toString()
+            # PrettyDecoded inserts literal spaces into GitHub's signed CDN
+            # query (Content-Disposition). Preserve the wire URL for policy
+            # checks and subsequent requests, including its signed escaping.
+            redirected = QUrl(transfer.url).resolved(QUrl(target)).toString(QUrl.FullyEncoded)
             reply.deleteLater()
             transfer.reply = None
             self._request(transfer, redirected)

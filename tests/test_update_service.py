@@ -279,6 +279,32 @@ class UpdateServiceTests(unittest.TestCase):
                     "https://localhost/a.exe", "https://github.com:444/a.exe", "https://evil.example/a.exe"):
             self.assertFalse(_safe_url(url, download=True, redirected=True), url)
 
+    def test_github_cdn_redirect_preserves_encoded_disposition_query(self):
+        # GitHub's real Location header uses encoded spaces in the signed CDN
+        # query. PrettyDecoded produces a literal space, which the production
+        # URL validator correctly rejects; transport must keep FullyEncoded.
+        location = (
+            "https://release-assets.githubusercontent.com/github-production-release-asset/123/asset-id"
+            "?response-content-disposition=attachment%3B%20filename%3DOsuSkinEditor-preview-r6.exe"
+            "&response-content-type=application%2Foctet-stream&sig=opaque-signature"
+        )
+        decoded = QUrl(location).toString()
+        self.assertIn(" ", decoded)
+        self.assertFalse(_safe_url(decoded, download=True, redirected=True))
+        reply = self.start_download()
+        reply.respond(status=302, redirect=location)
+        self.assertEqual(len(self.network.requests), 3)
+        redirected_url = self.network.requests[-1].url().toString(QUrl.FullyEncoded)
+        self.assertEqual(redirected_url, location)
+        self.assertIn("%20", redirected_url)
+        self.assertIn("%3B", redirected_url)
+        self.assertNotIn(" ", redirected_url)
+        self.network.latest.respond(self.body, headers={"Content-Length": len(self.body)})
+        self.assertEqual(len(self.ready), 1)
+        self.assertEqual(Path(self.ready[0][0]).read_bytes(), self.body)
+        self.assertEqual(self.ready[0][1], self.release)
+        self.assertFalse(self.errors)
+
     def test_unsafe_redirect_or_tls_errors_abort_and_remove_only_partial(self):
         reply = self.start_download()
         reply.respond(status=302, redirect="https://example.com/payload.exe")

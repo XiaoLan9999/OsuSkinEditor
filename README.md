@@ -8,13 +8,13 @@
 
 Windows 版下载后直接运行，无需安装 Python
 
-**[下载 v1.6.0-preview.5 开发预览](https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.5/OsuSkinEditor-v1.6.0-preview.5-windows-x64.exe)** · [开发预览发布说明](https://github.com/XiaoLan9999/OsuSkinEditor/releases/tag/v1.6.0-preview.5)
+**[下载 v1.6.0-preview.6 开发预览](https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.6/OsuSkinEditor-v1.6.0-preview.6-windows-x64.exe)** · [开发预览发布说明](https://github.com/XiaoLan9999/OsuSkinEditor/releases/tag/v1.6.0-preview.6)
 
 **开发预览包含** Mania 键盘试玩与舞台侧图、Standard 自动测试、判定与连击素材检查，以及独立预览窗口，这些功能不在旧版 v1.5 程序中
 
-当前开发预览为 **1.6.0-preview.5 / preview-r5，构建号 5**，包含在线公告与程序更新功能
+当前开发预览为 **1.6.0-preview.6 / preview-r6，构建号 6**，包含在线公告与程序更新功能
 
-从 **v1.5 或预览 r1–r4** 升级时，请首次手动下载并运行上面的开发预览，之后可通过程序内的更新入口升级
+从 **v1.5 或预览 r1–r5** 升级时，请首次手动下载并运行上面的开发预览，之后可通过程序内的更新入口升级
 
 <details>
 <summary>查看内置更新公告</summary>
@@ -25,7 +25,7 @@ Windows 版下载后直接运行，无需安装 Python
 
 ## 在线公告与程序更新
 
-「关于」→「更新公告」将**当前版本说明**与**在线公告历史**分开显示，当前 r5 说明随程序打包，离线仍可阅读，历史公告从项目仓库获取，网络不可用时保留本地说明与可用缓存
+「关于」→「更新公告」将**当前版本说明**与**在线公告历史**分开显示，当前 r6 说明随程序打包，离线仍可阅读，历史公告从项目仓库获取，网络不可用时保留本地说明与可用缓存
 
 新公告首次显示后记住已读状态，可取消「启动时显示新公告」，之后仍能从菜单手动查看
 

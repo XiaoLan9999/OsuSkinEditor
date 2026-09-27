@@ -2,11 +2,13 @@
 
 本文说明当前更新机制及发布顺序，不表示文中的示例版本已经发布
 
-当前源码身份为 `VERSION = "1.6.0-preview.5"`、`BUILD_ID = "preview-r5"`、`BUILD_NUMBER = 5`、`CHANNEL = "preview"`，已发布 v1.5 的链接保留在 README
+当前源码身份为 `VERSION = "1.6.0-preview.6"`、`BUILD_ID = "preview-r6"`、`BUILD_NUMBER = 6`、`CHANNEL = "preview"`，已发布 v1.5 的链接保留在 README
 
 ## 用户如何更新
 
-v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并运行一次 v1.6.0-preview.5 或更新的 Windows EXE，公告不能给旧版远程安装更新功能
+v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并运行一次 v1.6.0-preview.6 或更新的 Windows EXE，公告不能给旧版远程安装更新功能
+
+预览 r5 已有更新入口，但下载跳转编码存在兼容问题，也需要手动升级到 r6 一次
 
 之后使用「关于」→「检查程序更新」选择通道、检查、下载并重启更新，后台自动检查可以关闭，检查到新版本不会自行安装
 
@@ -19,7 +21,7 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 | 文件或地址 | 用途 |
 | --- | --- |
 | `core/app_version.py` | 当前版本、公告 ID、构建号、默认通道与平台 |
-| `assets/updates.json` | 随程序打包的当前构建离线说明，当前仅包含 r5 |
+| `assets/updates.json` | 随程序打包的当前构建离线说明，当前仅包含 r6 |
 | `updates/announcements.json` | 完整中英双语公告历史，最新记录排在前面 |
 | `updates/manifest.json` | 经过 Ed25519 签名的稳定版和预览版更新指针 |
 | `core/update_public_key.py` | 程序内置的 Ed25519 公钥，可提交到源码仓库 |
@@ -40,7 +42,7 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 
 `BUILD_NUMBER` 是全渠道统一的递增序号，每次发布都应大于正式版和开发预览中所有已经发布的构建号，不能在切换通道后重新从 1 开始，也不能只递增版本字符串
 
-例如当前预览构建号为 5，下一个正式版如果希望当前预览用户能够升级，必须使用大于 5 的构建号，客户端不会因为版本标签看起来更高而安装相同或更低的构建号
+例如当前预览构建号为 6，下一个正式版如果希望当前预览用户能够升级，必须使用大于 6 的构建号，客户端不会因为版本标签看起来更高而安装相同或更低的构建号
 
 合并旧清单时，发布工具会比较两个通道的最大构建号，拒绝相同或更低的构建号，维护者还需确保源码中的构建身份与最终 EXE 一致
 
@@ -84,18 +86,18 @@ py -m venv .venv
 
 不要先发布指向尚未上传文件的新清单，也不要手动修改已经签名的 Base64 载荷，发布工具本身不执行上传或 Git 操作
 
-下面以首次发布当前 r5 构建为例，示例不会展示或创建私钥，版本和构建号必须改成实际待发布构建的值
+下面以首次发布当前 r6 构建为例，示例不会展示或创建私钥，版本和构建号必须改成实际待发布构建的值
 
 ```powershell
 $signingKey = Join-Path $env:LOCALAPPDATA 'OsuSkinEditor\Publisher\update-signing-key.pem'
-$releaseExe = 'work\release\OsuSkinEditor-v1.6.0-preview.5-windows-x64.exe'
+$releaseExe = 'work\release\OsuSkinEditor-v1.6.0-preview.6-windows-x64.exe'
 $manifestArgs = @(
     '--exe', $releaseExe,
-    '--version', '1.6.0-preview.5',
-    '--build-id', 'preview-r5',
-    '--build-number', '5',
+    '--version', '1.6.0-preview.6',
+    '--build-id', 'preview-r6',
+    '--build-number', '6',
     '--channel', 'preview',
-    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.5/OsuSkinEditor-v1.6.0-preview.5-windows-x64.exe',
+    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.6/OsuSkinEditor-v1.6.0-preview.6-windows-x64.exe',
     '--private-key', $signingKey,
     '--output', 'updates\manifest.json'
 )

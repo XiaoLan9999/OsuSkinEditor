@@ -2,38 +2,34 @@
   "schema_version": 1,
   "entries": [
     {
-      "id": "preview-r5",
-      "version": "1.6.0-preview.5",
+      "id": "preview-r6",
+      "version": "1.6.0-preview.6",
       "date": "2026-09-28",
       "channel": "preview",
       "title": {
-        "zh-CN": "在线公告与一键更新",
-        "en-US": "Online announcements and in-app updates"
+        "zh-CN": "在线更新下载兼容修复",
+        "en-US": "Update download compatibility fix"
       },
       "summary": {
-        "zh-CN": "开发预览：在编辑器内查看在线公告，下载新版并重启完成替换",
-        "en-US": "Development preview: read online news, download a new build and restart to apply it"
+        "zh-CN": "开发预览：保留 GitHub 下载跳转地址的完整编码，避免将合法更新下载误判为无效地址",
+        "en-US": "Development preview: preserve the exact encoding of GitHub download redirects so valid updates are accepted"
       },
       "sections": [
         {
           "title": {
-            "zh-CN": "更新更方便",
-            "en-US": "Keep the editor up to date"
+            "zh-CN": "下载与升级",
+            "en-US": "Downloads and upgrades"
           },
           "items": {
             "zh-CN": [
-              "本地只保留当前版本说明，在线公告与历史记录独立刷新",
-              "正式版与预览版分别检查，可在更新窗口选择通道",
-              "下载显示进度并支持取消，使用发布签名、文件大小和 SHA-256 验证更新包",
-              "重启更新前处理未保存的编辑，更新助手保留旧程序并在替换或启动失败时恢复",
-              "断网或更新失败时保留当前程序和皮肤，仍可离线编辑"
+              "修复 Qt 显示格式解码下载地址后触发安全检查的问题，继续验证 HTTPS、目标域名、发布签名和文件哈希",
+              "保留在线公告、下载进度、取消、重启替换与旧程序备份恢复流程",
+              "v1.5 与预览 r1–r5 用户请先从 Release 手动下载此版，之后可使用程序内更新"
             ],
             "en-US": [
-              "Only the current build notes are bundled; online news and history refresh separately",
-              "Check stable and preview channels independently and choose a channel in the update window",
-              "Download with progress and cancellation, verifying the signed release manifest, file size and SHA-256",
-              "Resolve unsaved edits before restarting; the update helper keeps the previous executable and rolls back on replacement or startup failure",
-              "Continue editing offline when the network or update is unavailable, preserving the current app and skins"
+              "Fix a redirect encoding issue while retaining HTTPS, host, signature and file-integrity checks",
+              "Keep online announcements, progress, cancellation, restart replacement and backup recovery",
+              "Users of v1.5 and previews r1–r5 should download this build from Releases once, then use in-app updates"
             ]
           }
         }
