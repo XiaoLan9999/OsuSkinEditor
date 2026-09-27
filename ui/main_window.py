@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QSplitter, QListWidget, QWidget, QVBoxLayout, QTabWidget,
     QMessageBox, QMenu, QDockWidget, QPushButton, QHBoxLayout, QGridLayout, QLabel, QSpinBox, QCheckBox, QDialog, QDialogButtonBox,
-    QFrame, QLineEdit, QComboBox, QStackedWidget, QListWidgetItem, QStyle, QSizePolicy, QToolButton, QPlainTextEdit
+    QFrame, QLineEdit, QComboBox, QStackedWidget, QListWidgetItem, QStyle, QSizePolicy, QToolButton, QPlainTextEdit, QApplication
 )
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon, QImageReader, QPixmap, QKeySequence
 from PySide6.QtCore import Qt, QSettings, QByteArray, QTimer, QUrl, QSize
@@ -22,6 +22,9 @@ from ui.mania_design_dock import ManiaDesignDock
 from ui.mania_preview_controls import ManiaPreviewControls
 from ui.std_preview_controls import StdPreviewControls
 from ui.detached_preview import DetachedPreviewWindow
+from ui.update_announcements import UpdateAnnouncementsDialog
+from core.update_announcements import (load_announcements, should_show_announcement,
+                                       mark_announcements_seen)
 from ui.widgets.wheel_guard import ClickWheelComboBox
 from ui.widgets.asset_inspector import AssetInspector
 from ui.widgets.identity import AvatarBadge, TechPanel, WelcomeCanvas
@@ -70,6 +73,12 @@ class MainWindow(QMainWindow):
         self._preview_window = None
         self._preview_placeholder = None
         self._preview_split_sizes = None
+        self._update_dialog = None
+        self._announcement_entries = load_announcements()
+        self._closing = False
+        self._update_notice_timer = QTimer(self)
+        self._update_notice_timer.setSingleShot(True)
+        self._update_notice_timer.timeout.connect(self._maybe_show_update_announcement)
 
         self._build_workspace()
 
@@ -93,6 +102,7 @@ class MainWindow(QMainWindow):
 
         # 作者信息动作
         self.act_about_author = QAction(self)
+        self.act_update_announcements = QAction(self)
         self.act_assets_images = QAction(self)
         self.act_assets_audio = QAction(self)
 
@@ -125,6 +135,7 @@ class MainWindow(QMainWindow):
         self.act_link_bilibili.triggered.connect(lambda: QDesktopServices.openUrl(QUrl('https://space.bilibili.com/325569826')))
         self.act_link_blog.triggered.connect(lambda: QDesktopServices.openUrl(QUrl('https://blog.xiaolan9999.net/')))
         self.act_about_author.triggered.connect(self._show_author_info_dialog)
+        self.act_update_announcements.triggered.connect(self._show_update_announcements)
         self.act_assets_images.triggered.connect(lambda: self._open_assets_manager('image'))
         self.act_assets_audio.triggered.connect(lambda: self._open_assets_manager('audio'))
 
@@ -159,6 +170,7 @@ class MainWindow(QMainWindow):
         self.act_center_alpha = QAction(self); self.act_center_alpha.setCheckable(True)
         self.center_group.addAction(self.act_center_image); self.center_group.addAction(self.act_center_alpha)
         self.author_menu.addAction(self.act_about_author)
+        self.author_menu.addAction(self.act_update_announcements)
         self.assets_menu.addAction(self.act_assets_images)
         self.assets_menu.addAction(self.act_assets_audio)
 
@@ -875,6 +887,10 @@ class MainWindow(QMainWindow):
         if not self._confirm_design_navigation():
             event.ignore()
             return
+        self._closing = True
+        self._update_notice_timer.stop()
+        if self._update_dialog is not None:
+            self._update_dialog.close()
         self._restore_preview()
         # 仍保存窗口布局，但界面启动后会强制隐藏两个调试类面板
         self.settings.setValue("ui/geometry", self.saveGeometry())
@@ -912,6 +928,44 @@ class MainWindow(QMainWindow):
             self._syncing_mania_keys = False
     # ---------- i18n ----------
 
+    def schedule_update_announcement(self):
+        """Called by the application entrypoint after the main window is shown."""
+        if not self._closing:
+            self._update_notice_timer.start(250)
+
+    def _maybe_show_update_announcement(self):
+        self._update_notice_timer.stop()
+        if self._closing or not self.isVisible():
+            return
+        if not should_show_announcement(self.settings, self._announcement_entries):
+            return
+        if self._update_dialog is not None and self._update_dialog.isVisible():
+            return
+        manual_play = (self.mania_preview.test_mode == "play" and self.mania_preview._playing
+                       and self.mania_preview._input_armed)
+        fullscreen = self._preview_window is not None and self._preview_window.isFullScreen()
+        if QApplication.activeModalWidget() is not None or manual_play or fullscreen or self.isMinimized():
+            self._update_notice_timer.start(1000)
+            return
+        self._show_update_announcements()
+
+    def _show_update_announcements(self):
+        if self._closing:
+            return
+        if self._update_dialog is None:
+            dialog = UpdateAnnouncementsDialog(self.settings, self._announcement_entries, self)
+            self._update_dialog = dialog
+            dialog.finished.connect(lambda result, viewer=dialog: self._finish_update_announcements(viewer))
+        self._update_dialog.show()
+        self._update_dialog.raise_()
+        self._update_dialog.activateWindow()
+
+    def _finish_update_announcements(self, dialog):
+        mark_announcements_seen(self.settings, dialog.viewed_ids)
+        if self._update_dialog is dialog:
+            self._update_dialog = None
+        dialog.deleteLater()
+
     def _show_author_info_dialog(self):
             # ---------- xiaolan ----------
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox
@@ -948,6 +1002,9 @@ class MainWindow(QMainWindow):
 
         self.author_menu.setTitle(i18n.t("menu.author", "作者"))
         self.act_about_author.setText(i18n.t("action.about_author", "作者信息…"))
+        self.act_update_announcements.setText(i18n.t("announcements.menu", "更新公告…"))
+        if self._update_dialog is not None:
+            self._update_dialog.retranslate()
         self.assets_menu.setTitle(i18n.t('menu.assets', '皮肤文件小工具'))
         self.act_assets_images.setText(i18n.t('action.assets_images', '图片管理…'))
         self.act_assets_audio.setText(i18n.t('action.assets_audio', '音频管理…'))

@@ -198,5 +198,21 @@
   "std_test": {
     "auto": "自动测试",
     "fallback": "缺少部分素材，使用基础图形"
+  },
+  "announcements": {
+    "menu": "更新公告…",
+    "title": "更新公告",
+    "subtitle": "随程序提供的版本记录，离线也能查看",
+    "current_build": "当前构建：{version}",
+    "preview_version": "开发预览 {version}",
+    "current": "当前",
+    "preview": "开发预览",
+    "stable": "正式发布",
+    "contents": "公告内容",
+    "history": "版本历史",
+    "show_on_start": "启动时显示新公告",
+    "full_history": "项目更新记录",
+    "close": "知道了",
+    "empty": "公告暂不可用，可前往项目查看更新记录"
   }
 }

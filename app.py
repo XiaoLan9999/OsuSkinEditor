@@ -6,6 +6,7 @@ from ui.main_window import MainWindow
 from core import i18n
 from ui.theme import apply_theme
 from core.resources import brand_image_path
+from core.update_announcements import CURRENT_BUILD_ID
 import sys, os
 
 # 兼容源码运行 & PyInstaller(onefile) 的资源定位
@@ -16,6 +17,7 @@ def resource_path(rel: str) -> str:
 def main():
     QCoreApplication.setOrganizationName("XiaoLan9999")
     QCoreApplication.setApplicationName("osu XiaoLan Skin Editor")
+    QCoreApplication.setApplicationVersion(CURRENT_BUILD_ID)
     app = QApplication(sys.argv)
     apply_theme(app)
 
@@ -30,6 +32,7 @@ def main():
         pass
 
     win.show()
+    win.schedule_update_announcement()
     sys.exit(app.exec())
 
 if __name__ == "__main__":

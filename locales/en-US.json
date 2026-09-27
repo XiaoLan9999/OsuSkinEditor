@@ -198,5 +198,21 @@
   "std_test": {
     "auto": "Auto test",
     "fallback": "Some artwork is missing; using basic shapes"
+  },
+  "announcements": {
+    "menu": "What’s new…",
+    "title": "What’s new",
+    "subtitle": "Version history included with the app, available offline",
+    "current_build": "Current build: {version}",
+    "preview_version": "Preview {version}",
+    "current": "Current",
+    "preview": "Development preview",
+    "stable": "Stable release",
+    "contents": "Announcement details",
+    "history": "Version history",
+    "show_on_start": "Show new announcements on startup",
+    "full_history": "Project changelog",
+    "close": "Got it",
+    "empty": "Announcements are unavailable; you can view the project changelog"
   }
 }

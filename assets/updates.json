@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "preview-r4",
+      "version": "Preview r4",
+      "date": "2026-09-28",
+      "channel": "preview",
+      "title": {
+        "zh-CN": "内置更新公告",
+        "en-US": "Updates inside the editor"
+      },
+      "summary": {
+        "zh-CN": "开发预览：在程序内了解新功能，也能随时回看之前的更新",
+        "en-US": "Development preview: discover new features and revisit earlier updates without leaving the editor"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "公告查看与提醒",
+            "en-US": "Read updates your way"
+          },
+          "items": {
+            "zh-CN": [
+              "首次遇到新公告时自动显示，读过的公告不会在每次启动时重复弹出",
+              "在公告窗口切换历史记录，查看开发预览与已发布版本分别更新了什么",
+              "可从菜单手动打开公告，不必等待下一次启动",
+              "可关闭启动时自动显示，之后仍能手动查看全部公告"
+            ],
+            "en-US": [
+              "New announcements appear once on startup instead of reopening after every launch",
+              "Browse the history to see changes in development previews and published versions",
+              "Open announcements from the menu whenever you need them",
+              "Turn off automatic startup announcements while keeping the full history available"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "preview-r3",
+      "version": "Preview r3",
+      "date": "2026-09-28",
+      "channel": "preview",
+      "title": {
+        "zh-CN": "Standard 测试与独立预览",
+        "en-US": "Standard scenes and a separate preview window"
+      },
+      "summary": {
+        "zh-CN": "开发预览：补齐舞台侧图，在独立窗口检查 Standard 与 Mania 的皮肤画面",
+        "en-US": "Development preview: inspect Standard and Mania skins in a separate window, with stage artwork restored"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "更完整地查看皮肤",
+            "en-US": "See more of your skin"
+          },
+          "items": {
+            "zh-CN": [
+              "Standard 新增混合、圆圈、滑条和转盘自动测试场景，保留单个圆圈的素材检查",
+              "调整 CS 圆圈大小和 AR 缩圈速度，暂停查看判定图与连击图，设置仅影响预览",
+              "Standard 显示皮肤血条装饰、分数与准确率字体，使用示例血量和内置排列，不读取谱面或播放音乐",
+              "Mania 补齐常驻舞台侧图和舞台底部动画，保留皮肤图片自身的透明边距",
+              "轨道、侧图与大幅插画统一缩放，可选择 16:10、16:9 或 4:3 画面比例",
+              "使用独立预览窗口和 F11 全屏查看，关闭窗口后可回到原来的编辑界面"
+            ],
+            "en-US": [
+              "Standard gains mixed, circle, slider and spinner scenes, alongside the single-circle asset inspector",
+              "Adjust CS and AR for the preview, then pause to inspect judgement and combo artwork",
+              "Standard displays skin health-bar artwork, score and accuracy fonts using sample health and built-in patterns, without beatmaps or music",
+              "Mania now displays persistent stage-side artwork and animated stage bottoms while preserving transparent margins",
+              "Columns and artwork share one scene scale, with 16:10, 16:9 and 4:3 viewport options",
+              "Move the preview into its own window, use F11 for fullscreen and close it to return to the editor"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "preview-r2",
+      "version": "Preview r2",
+      "date": "2026-09-28",
+      "channel": "preview",
+      "title": {
+        "zh-CN": "长条圆角与连击显示修复",
+        "en-US": "Hold-note artwork and combo display fixes"
+      },
+      "summary": {
+        "zh-CN": "开发预览：改善长条主体、尾部定位和连击数字的显示，更准确地保留皮肤原有设计",
+        "en-US": "Development preview: improve hold bodies, tail placement and combo effects to better preserve the skin's design"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "Mania 显示修复",
+            "en-US": "Mania rendering improvements"
+          },
+          "items": {
+            "zh-CN": [
+              "修复部分长条尾端显示成平口的问题，保留 Capoo 等皮肤画在主体顶部的圆角和透明留白",
+              "长按时裁切剩余主体，不再把原图反复拉伸，透明尾图也参与定位",
+              "支持更多长条样式名称、各列设置与方向选项",
+              "连击数字读取皮肤的长按和断连颜色，加入命中弹跳与断连扩散效果",
+              "试玩判定加入缩放和淡出，单独检查判定图时保持原尺寸并播放素材动画"
+            ],
+            "en-US": [
+              "Fix flat-looking hold ends by preserving rounded artwork and transparent padding at the top of bodies used by skins such as Capoo",
+              "Crop the remaining hold body as it is held instead of repeatedly stretching it, and account for transparent tail images",
+              "Support more named body styles, per-column settings and direction options",
+              "Apply the skin's hold and combo-break colours, with hit pulses and combo-break effects",
+              "Animate gameplay judgements with scaling and fading while keeping the dedicated inspector at the artwork's original size"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "preview-r1",
+      "version": "Preview r1",
+      "date": "2026-09-27",
+      "channel": "preview",
+      "title": {
+        "zh-CN": "Mania 简单皮肤试玩",
+        "en-US": "A simple Mania skin playtest"
+      },
+      "summary": {
+        "zh-CN": "开发预览：用自动测试或键盘试玩检查音符、长条、判定图与连击素材",
+        "en-US": "Development preview: inspect notes, holds, judgements and combo artwork through autoplay or keyboard practice"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "从预览到简单试玩",
+            "en-US": "Try the skin in motion"
+          },
+          "items": {
+            "zh-CN": [
+              "新增自动测试与键盘试玩，保留循环预览，使用 60 秒内置排列",
+              "选择混合、普通音符、长条或和弦，切换 1–18K 并查看对应键位提示",
+              "按列读取普通音符、长条头身尾及按键按下素材，支持自定义路径、高清图片和连续动画",
+              "单独检查大 PERFECT、小 PERFECT、GREAT、GOOD、BAD、MISS，以及连击数字和连击插画",
+              "查看实际素材路径与缺失引用，按 Esc 或切出场地时暂停，填写配置时不会误触发试玩",
+              "试玩采用简化计分和独立长条头尾判定，不读取游戏谱面或播放歌曲"
+            ],
+            "en-US": [
+              "Choose autoplay or keyboard practice with a built-in 60-second pattern, or keep using the looping preview",
+              "Try mixed notes, taps, holds or chords across 1–18 keys with visible key-binding hints",
+              "Load each column's notes, hold parts and pressed keys from custom paths, including high-resolution images and frame animations",
+              "Inspect both PERFECT tiers, GREAT, GOOD, BAD and MISS, plus combo digits and combo-burst artwork",
+              "Check actual asset paths and missing references, pause with Esc or when leaving the playfield, and edit settings without triggering notes",
+              "Practice uses simplified scoring with separate hold-head and tail judgements, without loading beatmaps or playing songs"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "v1.5",
+      "version": "v1.5",
+      "date": "2026-09-25",
+      "channel": "release",
+      "title": {
+        "zh-CN": "Mania 设计器与科技风界面",
+        "en-US": "Mania Designer and a refreshed interface"
+      },
+      "summary": {
+        "zh-CN": "已发布版本：调整上隐与球槽高度，保存皮肤副本，并使用新的素材工作台",
+        "en-US": "Published version: design upper masks and receptor height, save a skin copy and use the refreshed asset workspace"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "编辑与保存",
+            "en-US": "Edit and save skins"
+          },
+          "items": {
+            "zh-CN": [
+              "新增上隐高度、渐变、颜色与底部球槽加高，可联动调整判定位置",
+              "将设计保存为独立皮肤副本，为所选键数生成素材，保留原皮肤",
+              "Mania 预览增加流速、BPM、键数、判定参考线与重置操作",
+              "采用小蓝头像与深蓝冰青界面，右上角提供独立的语言切换入口",
+              "素材库支持搜索、分类、图片查看与音频试听，素材替换后刷新预览",
+              "修复滚轮误改数值、高清素材定位及配置保存问题，保留配置备份和历史快照"
+            ],
+            "en-US": [
+              "Adjust upper-mask height, fade and colour, raise receptors and optionally move the hit position with them",
+              "Save the design as a separate skin copy with generated assets for the selected key count, preserving the original skin",
+              "Control Mania preview speed, BPM, key count, the hit-position guide and restart",
+              "Use the Xiaolan avatar and deep-blue interface, with a dedicated language selector in the top-right corner",
+              "Search and filter assets, inspect images, preview audio and refresh the scene after replacements",
+              "Fix accidental scroll-wheel edits, high-resolution asset placement and configuration saving while retaining backups and history"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
