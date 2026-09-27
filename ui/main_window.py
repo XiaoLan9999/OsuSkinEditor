@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QSplitter, QListWidget, QWidget, QVBoxLayout, QTabWidget,
     QMessageBox, QMenu, QDockWidget, QPushButton, QHBoxLayout, QGridLayout, QLabel, QSpinBox, QCheckBox, QDialog, QDialogButtonBox,
-    QFrame, QLineEdit, QComboBox, QStackedWidget, QListWidgetItem, QStyle, QSizePolicy, QToolButton
+    QFrame, QLineEdit, QComboBox, QStackedWidget, QListWidgetItem, QStyle, QSizePolicy, QToolButton, QPlainTextEdit
 )
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon, QImageReader, QPixmap, QKeySequence
 from PySide6.QtCore import Qt, QSettings, QByteArray, QTimer, QUrl, QSize
@@ -216,10 +216,18 @@ class MainWindow(QMainWindow):
         self.mania_playback.guide_changed.connect(self.mania_preview.set_show_hit_guide)
         self.mania_playback.restart_requested.connect(self.mania_preview.restart_demo)
         self.mania_playback.keys_requested.connect(self._request_mania_keys)
+        self.mania_playback.test_mode_changed.connect(self._change_test_mode)
+        self.mania_playback.test_pattern_changed.connect(self._change_test_pattern)
+        self.mania_playback.judgement_requested.connect(self._inspect_judgement)
+        self.mania_playback.combo_requested.connect(self._inspect_combo)
+        self.mania_playback.assets_requested.connect(self._show_mania_asset_map)
+        self.mania_preview.play_state_changed.connect(self._sync_test_state)
         self.mania_playback.speed.setValue(self.settings.value("preview/mania_speed", 20, int))
         self.mania_playback.tempo.setValue(self.settings.value("preview/mania_tempo", 120, int))
         self.mania_preview.set_scroll_speed(self.mania_playback.speed.value())
         self.mania_preview.set_demo_bpm(self.mania_playback.tempo.value())
+        self.mania_preview.set_test_mode(self.mania_playback.test_mode.currentData())
+        self.mania_preview.set_test_pattern(self.mania_playback.test_pattern.currentData())
 
         self._refresh_recent_menu()
         self.retranslate()
@@ -291,6 +299,10 @@ class MainWindow(QMainWindow):
         self.preview_badge = QLabel(); self.preview_badge.setObjectName("Badge")
         preview_heading.addWidget(self.preview_label); preview_heading.addWidget(self.preview_badge); preview_heading.addStretch()
         self.btn_pause = QPushButton(); self.btn_pause.setCheckable(True); self.btn_pause.toggled.connect(self._set_paused)
+        # Mouse clicks must not pause via focusOut before the button toggles,
+        # which would turn a requested pause into an immediate resume.
+        # TabFocus preserves keyboard access without stealing mouse focus.
+        self.btn_pause.setFocusPolicy(Qt.TabFocus)
         self.preview_zoom = QComboBox()
         for percent in (50, 75, 100, 125, 150, 200, 300):
             self.preview_zoom.addItem(f"{percent}%", percent / 100.0)
@@ -338,6 +350,103 @@ class MainWindow(QMainWindow):
         self.mania_playback.setVisible(index == 1 and self.skin is not None)
         self.btn_mania.setVisible(index == 1)
         self.btn_design.setVisible(index == 1)
+        preview = self.mania_preview if index == 1 else self.std_preview
+        self.btn_pause.blockSignals(True)
+        self.btn_pause.setChecked(not preview._playing)
+        self.btn_pause.blockSignals(False)
+        self.btn_pause.setText(i18n.t("workspace.resume" if self.btn_pause.isChecked() else "workspace.pause"))
+        self._refresh_playtest_help()
+
+    def _refresh_playtest_help(self):
+        self.mania_playback.update_input_hint(self.mania_preview.key_labels)
+        if hasattr(self, "preview_badge"):
+            key = "playtest.badge" if self.tabs.currentIndex() == 1 and self.mania_playback.test_mode.currentData() != "demo" else "workspace.demo"
+            self.preview_badge.setText(i18n.t(key))
+        if hasattr(self, "preview_note"):
+            key = "playtest.footer" if self.tabs.currentIndex() == 1 and self.mania_playback.test_mode.currentData() != "demo" else "workspace.preview_note"
+            self.preview_note.setText(i18n.t(key))
+
+    def _change_test_mode(self, mode):
+        self.mania_preview.set_test_mode(mode)
+        self._refresh_playtest_help()
+
+    def _change_test_pattern(self, pattern):
+        self.mania_preview.set_test_pattern(pattern)
+        self._refresh_playtest_help()
+
+    def _sync_test_state(self, state):
+        if self.tabs.currentIndex() != 1:
+            return
+        paused = state != "playing"
+        self.btn_pause.blockSignals(True)
+        self.btn_pause.setChecked(paused)
+        self.btn_pause.blockSignals(False)
+        self.btn_pause.setText(i18n.t("workspace.resume" if paused else "workspace.pause"))
+        self.std_preview.set_playing(not paused)
+        self._refresh_playtest_help()
+
+    def _inspect_judgement(self, kind):
+        self.btn_pause.setChecked(True)
+        self.mania_preview.show_judgement(kind)
+
+    def _inspect_combo(self):
+        self.btn_pause.setChecked(True)
+        self.mania_preview.show_comboburst()
+        assets = self.mania_preview._assets
+        if assets is not None and not assets.combo_bursts:
+            self.statusBar().showMessage(i18n.t("playtest.no_combo_art"), 7000)
+
+    def _mania_asset_report(self):
+        assets = self.mania_preview._assets
+        if self.skin is None or assets is None:
+            return ""
+        def describe(sprite):
+            if sprite is None:
+                return i18n.t("playtest.no_asset", "缺失，使用回退效果")
+            paths = []
+            for path in sprite.paths[:2]:
+                try:
+                    paths.append(path.relative_to(self.skin.root).as_posix())
+                except ValueError:
+                    paths.append(path.name)
+            return " / ".join(paths) + (i18n.t("playtest.frames", " · {count} 帧").format(count=len(sprite.frames)) if sprite.animated else "")
+        lines = [i18n.t("playtest.asset_map_title", "Mania 素材映射") + f" · {self.mania_preview.keys}K", ""]
+        for column in range(self.mania_preview.keys):
+            for key, collection in ((f"NoteImage{column}", assets.notes), (f"NoteImage{column}H", assets.hold_heads),
+                                    (f"NoteImage{column}L", assets.hold_bodies), (f"NoteImage{column}T", assets.hold_tails),
+                                    (f"KeyImage{column}", assets.keys_up), (f"KeyImage{column}D", assets.keys_down)):
+                lines.append(f"{key}: {describe(collection[column])}")
+            lines.append("")
+        for kind, sprite in assets.judgements.items():
+            lines.append(f"Hit{kind}: {describe(sprite)}")
+        lines.append(f"ComboPrefix: {assets.combo_prefix}")
+        lines.extend(f"{assets.combo_prefix}-{digit}: {describe(sprite)}" for digit, sprite in enumerate(assets.digits))
+        lines.extend(f"comboburst-mania[{index}]: {describe(sprite)}" for index, sprite in enumerate(assets.combo_bursts))
+        if not assets.combo_bursts:
+            lines.append(i18n.t("playtest.no_combo_art"))
+        if assets.missing:
+            lines.extend(["", i18n.t("playtest.missing_refs", "未找到的引用，部分项目使用回退")])
+            lines.extend(f"{key}: {name}" for key, name in assets.missing.items())
+        if assets.warnings:
+            lines.extend(["", *assets.warnings])
+        return "\n".join(lines)
+
+    def _show_mania_asset_map(self):
+        if self.skin is None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(i18n.t("playtest.asset_map_title", "Mania 素材映射"))
+        dialog.resize(720, 540)
+        layout = QVBoxLayout(dialog)
+        text = QPlainTextEdit(dialog)
+        text.setReadOnly(True)
+        text.setPlainText(self._mania_asset_report())
+        layout.addWidget(text)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+        dialog.deleteLater()
 
     def _change_mania_speed(self, speed):
         self.mania_preview.set_scroll_speed(speed)
@@ -396,6 +505,7 @@ class MainWindow(QMainWindow):
     def _refresh_playback_keys(self):
         available = self.mania_ini_dock._skin_ini.available_mania_keys() if self.mania_ini_dock._skin_ini else []
         self.mania_playback.set_keys(available, self.mania_preview.keys)
+        self._refresh_playtest_help()
 
     def _request_mania_keys(self, keys):
         index = self.mania_ini_dock.cmb_keys.findData(keys)
@@ -407,8 +517,11 @@ class MainWindow(QMainWindow):
 
     def _set_paused(self, paused):
         self.std_preview.set_playing(not paused)
-        self.mania_preview.set_playing(not paused)
-        self.btn_pause.setText(i18n.t("workspace.resume" if paused else "workspace.pause"))
+        if not paused and self.tabs.currentIndex() == 1 and self.mania_playback.test_mode.currentData() == "play":
+            self.mania_preview.start_test()
+        else:
+            self.mania_preview.set_playing(not paused)
+        self.btn_pause.setText(i18n.t("workspace.resume" if self.btn_pause.isChecked() else "workspace.pause"))
 
     def _sync_skin_ui(self):
         loaded = self.skin is not None

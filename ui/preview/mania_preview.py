@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
-"""A lightweight skin preview with sample notes, not a beatmap simulation."""
+"""Skin preview and a local, synthetic Mania playtest with no skin writes."""
 from pathlib import Path
 import math
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPixmap, QLinearGradient, QImage
-from PySide6.QtCore import Qt, QRectF, QTimer, QElapsedTimer
+from PySide6.QtCore import Qt, QRectF, QTimer, QElapsedTimer, Signal
 from core.skin_ini import SkinIni
 from core.mania_designer import ManiaDesign, build_preview_overlay, effective_hit_position, DesignValidationError
 from core.mania_timeline import bounded_number, travel_time_ms, sample_note_ages
+from core.mania_gameplay import ManiaGame
+from ui.preview.mania_skin_assets import ManiaSkinAssets
 from core import i18n
 
 
 class ManiaPreview(QWidget):
+    play_state_changed = Signal(str)
+    session_changed = Signal(object)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(360, 300)
@@ -31,6 +36,22 @@ class ManiaPreview(QWidget):
         self.scroll_speed = 20.0
         self.demo_bpm = 120.0
         self._show_hit_guide = False
+        self.test_mode = "demo"
+        self.test_pattern = "mixed"
+        self.game = ManiaGame(keys=self.keys, bpm=self.demo_bpm, pattern=self.test_pattern)
+        self._assets = None
+        self._input_armed = False
+        self._last_judgement = None
+        self._last_burst = None
+        self._manual_burst_index = -1
+        self._combo_inspect = None
+        self._lane_flashes = {}
+        self._inspection_time = 0
+        self._inspection_clock = QElapsedTimer()
+        self._inspection_timer = QTimer(self)
+        self._inspection_timer.setInterval(33)
+        self._inspection_timer.timeout.connect(self._tick_inspection)
+        self.setFocusPolicy(Qt.StrongFocus)
         self.t = 0
         self._playing = True
         self._clock = QElapsedTimer()
@@ -40,7 +61,18 @@ class ManiaPreview(QWidget):
         self._load_layout_for_keys(self.keys)
 
     def set_playing(self, playing: bool):
-        self._playing = bool(playing)
+        awaiting_click = (bool(playing) and self.test_mode == "play" and
+                          (not self._input_armed or not self.hasFocus()))
+        self._playing = bool(playing) and not awaiting_click
+        if self._playing:
+            if self._last_judgement and self._last_judgement[2]:
+                self._last_judgement = None
+            if self._last_burst and self._last_burst[1]:
+                self._last_burst = None
+            self._combo_inspect = None
+        if not self._playing:
+            self.game.release_all(self.t)
+            self._lane_flashes.clear()
         if self._playing and self.isVisible():
             if not self.timer.isActive():
                 self._clock.start()
@@ -48,21 +80,205 @@ class ManiaPreview(QWidget):
         else:
             self.timer.stop()
             self._clock.invalidate()
+        self.play_state_changed.emit("ready" if awaiting_click else "playing" if self._playing else "paused")
+        self._sync_inspection_timer()
+        self.update()
+
+    def _sync_inspection_timer(self):
+        inspecting = ((self._last_judgement and self._last_judgement[2]) or
+                      (self._last_burst and self._last_burst[1]))
+        if inspecting and not self._playing and self.isVisible():
+            if not self._inspection_timer.isActive():
+                self._inspection_clock.start()
+            self._inspection_timer.start()
+        else:
+            self._inspection_timer.stop()
+            self._inspection_clock.invalidate()
+
+    def _tick_inspection(self):
+        if self._playing or not self.isVisible():
+            self._sync_inspection_timer()
+            return
+        if self._inspection_clock.isValid():
+            self._inspection_time += self._inspection_clock.restart()
+        self.update()
+
+    def _effect_age(self, when, manual):
+        return max(0, self._inspection_time if manual and not self._playing else self.t-when)
+
+    @property
+    def key_labels(self):
+        return tuple(label for label, _ in self._bindings())
+
+    def _bindings(self):
+        # These are local to this focused canvas, never application shortcuts.
+        layouts = {1: ["Space"], 2: ["F", "J"], 3: ["F", "Space", "J"],
+                   4: ["D", "F", "J", "K"], 5: ["D", "F", "Space", "J", "K"],
+                   6: ["S", "D", "F", "J", "K", "L"],
+                   7: ["S", "D", "F", "Space", "J", "K", "L"],
+                   8: ["A", "S", "D", "F", "J", "K", "L", ";"],
+                   9: ["A", "S", "D", "F", "Space", "J", "K", "L", ";"]}
+        labels = layouts.get(self.keys, list("QWERTYUIOPASDFGHJK")[:self.keys])
+        return tuple((label, int(Qt.Key_Space) if label == "Space" else
+                      int(Qt.Key_Semicolon) if label == ";" else ord(label)) for label in labels)
+
+    def set_test_mode(self, mode="demo"):
+        if mode not in ("demo", "play", "auto"):
+            raise ValueError("Unknown Mania test mode")
+        if mode == self.test_mode:
+            return
+        self.test_mode = mode
+        self._input_armed = False
+        self.restart_demo()
+        self.set_playing(mode != "play")
+        if mode == "play":
+            self.play_state_changed.emit("ready")
+
+    def set_test_pattern(self, pattern="mixed"):
+        if pattern not in ("mixed", "taps", "holds", "chords"):
+            raise ValueError("Unknown Mania test pattern")
+        if pattern != self.test_pattern:
+            self.test_pattern = pattern
+            self.restart_demo()
+
+    def show_judgement(self, kind):
+        aliases = {"max": "300g", "perfect": "300", "great": "200", "good": "100",
+                   "bad": "50", "miss": "0"}
+        kind = aliases.get(str(kind).lower(), str(kind).lower())
+        if kind not in ("300g", "300", "200", "100", "50", "0"):
+            raise ValueError("Unknown Mania judgement")
+        self._last_judgement = (kind, self.t, True)
+        self._inspection_time = 0
+        self._sync_inspection_timer()
+        self.update()
+
+    def show_comboburst(self):
+        self._manual_burst_index += 1
+        self._last_burst = (self.t, True)
+        self._combo_inspect = (100, self.t)
+        self._inspection_time = 0
+        self._sync_inspection_timer()
+        self.update()
+
+    def set_comboburst_preview(self, enabled=True):
+        if enabled:
+            self.show_comboburst()
+        else:
+            self._last_burst = None
+            self._combo_inspect = None
+            self._sync_inspection_timer()
+            self.update()
+
+    def _accept_events(self, events):
+        for event in events:
+            self._last_judgement = (event.judgement, event.time_ms, False)
+            if event.judgement != "0":
+                self._lane_flashes[event.lane] = event.time_ms
+                if event.combo and event.combo % 50 == 0:
+                    self._last_burst = (event.time_ms, False)
+        if events:
+            self.session_changed.emit(self.game)
+
+    def _advance_game(self):
+        if self.test_mode == "demo":
+            return
+        self._accept_events(self.game.advance_to(self.t, autoplay=self.test_mode == "auto"))
+        if self.game.finished:
+            if self.test_mode == "auto":
+                self.restart_demo()
+            else:
+                self.set_playing(False)
+                self.play_state_changed.emit("finished")
+
+    def _sync_time(self):
+        if self._clock.isValid():
+            self.t += self._clock.restart()
+        else:
+            self._clock.start()
+        self._advance_game()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.test_mode == "play" and self.skin:
+            self.start_test()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def start_test(self):
+        """Explicit canvas/toolbar action; config focus alone never arms input."""
+        if self.test_mode != "play" or not self.skin:
+            return
+        self.setFocus(Qt.OtherFocusReason)
+        if self.game.finished:
+            self.restart_demo()
+        self._input_armed = True
+        self.set_playing(True)
+
+    def keyPressEvent(self, event):
+        if self.test_mode != "play" or not self._input_armed or not self.hasFocus():
+            super().keyPressEvent(event)
+            return
+        if event.key() == Qt.Key_Escape:
+            self.set_playing(False)
+            self._input_armed = False
+            event.accept()
+            return
+        lane = next((i for i, (_, key) in enumerate(self._bindings()) if key == event.key()), None)
+        if lane is None or event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier):
+            super().keyPressEvent(event)
+            return
+        if self._playing and not event.isAutoRepeat():
+            self._sync_time()
+            self._accept_events(self.game.key_down(lane, self.t))
+            self.update()
+        event.accept()
+
+    def keyReleaseEvent(self, event):
+        lane = next((i for i, (_, key) in enumerate(self._bindings()) if key == event.key()), None)
+        if self.test_mode == "play" and self._input_armed and lane is not None:
+            if self._playing and not event.isAutoRepeat():
+                self._sync_time()
+                self._accept_events(self.game.key_up(lane, self.t))
+                self.update()
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
+
+    def focusOutEvent(self, event):
+        if self.test_mode == "play":
+            self._input_armed = False
+            self.set_playing(False)
+        super().focusOutEvent(event)
 
     def set_scroll_speed(self, value):
         self.scroll_speed = bounded_number(value, 1, 40, 20)
         self.update()
 
     def set_demo_bpm(self, value):
-        self.demo_bpm = bounded_number(value, 40, 300, 120)
+        value = bounded_number(value, 40, 300, 120)
+        if value != self.demo_bpm:
+            self.demo_bpm = value
+            if self.test_mode != "demo":
+                self.restart_demo()
         self.update()
 
     def restart_demo(self):
         self.t = 0
+        self.game.reset(keys=self.keys, bpm=self.demo_bpm, pattern=self.test_pattern)
+        self._last_judgement = None
+        self._last_burst = None
+        self._combo_inspect = None
+        self._lane_flashes.clear()
+        self._sync_inspection_timer()
+        if self.test_mode == "play":
+            self._input_armed = False
+            self.set_playing(False)
+            self.play_state_changed.emit("ready")
         if self.timer.isActive():
             self._clock.start()
         else:
             self._clock.invalidate()
+        self.session_changed.emit(self.game)
         self.update()
 
     def set_show_hit_guide(self, show):
@@ -106,17 +322,19 @@ class ManiaPreview(QWidget):
         self.set_playing(self._playing)
 
     def hideEvent(self, event):
+        if self.test_mode == "play":
+            self._input_armed = False
+            self.set_playing(False)
         self.timer.stop()
         self._clock.invalidate()
+        self._inspection_timer.stop()
+        self._inspection_clock.invalidate()
         super().hideEvent(event)
 
     def tick(self):
         if not self._playing or not self.isVisible():
             return
-        if self._clock.isValid():
-            self.t += self._clock.restart()
-        else:
-            self._clock.start()
+        self._sync_time()
         self.update()
 
     def set_skin(self, skin):
@@ -200,15 +418,24 @@ class ManiaPreview(QWidget):
             "ColumnSpacing": self._list_of_ints(d.get("columnspacing"), max(k-1, 0), 0),
             "ColumnLineWidth": self._list_of_ints(d.get("columnlinewidth"), k+1, 2),
             "HitPosition": self._int_or_none(d.get("hitposition")),
+            "LightPosition": self._int_or_none(d.get("lightposition")),
+            "LightingNWidth": self._list_of_ints(d.get("lightingnwidth"), k, 0),
+            "LightingLWidth": self._list_of_ints(d.get("lightinglwidth"), k, 0),
             "WidthForNoteHeightScale": self._int_or_none(d.get("widthfornoteheightscale")),
         }
         self._note_images = []
         self._key_images = []
         self._image_density = {}
+        self._assets = ManiaSkinAssets(self._skin_root(), d,
+                                       config=getattr(self.skin, "ini", None), keys=k)
         for i in range(k):
-            suffix = "S" if k % 2 and i == k//2 else str(1 + min(i, k-i-1) % 2)
-            self._note_images.append(self._pix(d.get(f"noteimage{i}", f"mania-note{suffix}")))
-            self._key_images.append(self._pix(d.get(f"keyimage{i}", f"mania-key{suffix}")))
+            for sprites, images in ((self._assets.notes, self._note_images),
+                                    (self._assets.keys_up, self._key_images)):
+                sprite = sprites[i]
+                image = sprite.frame_at(0) if sprite else None
+                images.append(image)
+                if image is not None:
+                    self._image_density[image.cacheKey()] = sprite.density_at(0)
         self._stage_hint = self._pix(d.get("stagehint") or "mania-stage-hint")
         self._stage_bottom = self._pix(d.get("stagebottom") or "mania-stage-bottom")
         try:
@@ -270,12 +497,13 @@ class ManiaPreview(QWidget):
         hit_y = field.top() + self.effective_hit_position*scale
         return field, scale, widths, spacing, left, hit_y
 
-    def _key_rect(self, column, lane_x, width, field, scale):
-        key = self._key_images[column]
+    def _key_rect(self, column, lane_x, width, field, scale, key=None, density=None):
+        key = self._key_images[column] if key is None else key
         # Legacy keys stretch horizontally only. SD textures are in a 768-high
         # image space, while skin.ini uses 480: 480 / 768 = 0.625.
         # Their transparent padding is authored for a bottom-of-screen anchor.
-        density = self._image_density.get(key.cacheKey(), 1) if key is not None else 1
+        if density is None:
+            density = self._image_density.get(key.cacheKey(), 1) if key is not None else 1
         height = key.height()/density/1.6*scale if key is not None else 64*scale
         # Export bakes an integer number of transparent image pixels below each
         # receptor. Match that rounding per density, including sub-unit lifts.
@@ -317,16 +545,25 @@ class ManiaPreview(QWidget):
         lane_x = left
         for index, width in enumerate(widths):
             key = self._key_images[index]
-            rect = self._key_rect(index, lane_x, width, field, scale)
+            pressed = (index in self.game.pressed_lanes or
+                       (self.test_mode == "auto" and 0 <= self.t-self._lane_flashes.get(index, -1000) < 85))
+            sprite = self._assets.keys_down[index] if pressed else self._assets.keys_up[index]
+            density = None
+            if sprite is not None:
+                key, density = sprite.frame_at(self.t), sprite.density_at(self.t)
+            rect = self._key_rect(index, lane_x, width, field, scale, key, density)
             if key is not None:
                 painter.drawPixmap(rect, key, QRectF(key.rect()))
             else:
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor("#29364a"))
+                painter.setBrush(QColor("#66ddeb" if pressed else "#29364a"))
                 painter.drawRoundedRect(rect.adjusted(3, 0, -3, 0), 3, 3)
             lane_x += width + (spacing[index] if index < self.keys-1 else 0)
 
     def _draw_notes(self, painter, field, scale, widths, spacing, left, hit_y):
+        if self.test_mode != "demo":
+            self._draw_game_notes(painter, field, scale, widths, spacing, left, hit_y)
+            return
         lane_x = left
         duration = self.travel_time_ms
         for index, width in enumerate(widths):
@@ -343,6 +580,213 @@ class ManiaPreview(QWidget):
                     painter.drawRoundedRect(rect.adjusted(3, 0, -3, 0), 3, 3)
             lane_x += width + (spacing[index] if index < self.keys-1 else 0)
 
+    def _sprite_note_rect(self, sprite, lane_x, width, bottom, scale, widths):
+        image = sprite.frame_at(self.t) if sprite else None
+        height_width = self.layout["WidthForNoteHeightScale"]
+        reference = height_width*scale if height_width and height_width > 0 else min(widths)
+        height = reference*image.height()/image.width() if image else 10*scale
+        return QRectF(lane_x, bottom-height, width, height)
+
+    @staticmethod
+    def _paint_sprite(painter, sprite, rect, elapsed, flip=False):
+        if sprite is None or rect.isEmpty():
+            return False
+        image = sprite.frame_at(elapsed)
+        if flip:
+            painter.save()
+            painter.translate(0, rect.top()+rect.bottom())
+            painter.scale(1, -1)
+        painter.drawPixmap(rect, image, QRectF(image.rect()))
+        if flip:
+            painter.restore()
+        return True
+
+    def _draw_hold_body(self, painter, sprite, rect, style):
+        if sprite is None:
+            painter.fillRect(rect.adjusted(rect.width()*.2, 0, -rect.width()*.2, 0), QColor("#4ba6b8"))
+            return
+        if not style:
+            self._paint_sprite(painter, sprite, rect, self.t)
+            return
+        if style == 4:
+            # Preserve artwork at both caps, cropping the join in the middle.
+            # This avoids stretching tall gradient bodies into short holds.
+            for top_half, anchor in ((True, 2), (False, 3)):
+                painter.save()
+                half = QRectF(rect.left(), rect.top() if top_half else rect.center().y(),
+                              rect.width(), rect.height()/2)
+                painter.setClipRect(half, Qt.IntersectClip)
+                self._draw_hold_body(painter, sprite, rect, anchor)
+                painter.restore()
+            return
+        image = sprite.frame_at(self.t)
+        tile_height = max(1, rect.width()*image.height()/image.width())
+        painter.save()
+        painter.setClipRect(rect, Qt.IntersectClip)
+        # Align repeating textures to the selected cap while keeping the body
+        # clipped. The loop is bounded by the on-screen lane height.
+        visible_top = max(rect.top(), painter.clipBoundingRect().top())
+        visible_bottom = min(rect.bottom(), painter.clipBoundingRect().bottom())
+        origin = rect.bottom() if style == 3 else rect.top()
+        first = origin+math.floor((visible_top-origin)/tile_height)*tile_height
+        y = first
+        for _ in range(min(2048, max(0, math.ceil((visible_bottom-first)/tile_height)))):
+            self._paint_sprite(painter, sprite, QRectF(rect.left(), y, rect.width(), tile_height), self.t)
+            y += tile_height
+        painter.restore()
+
+    def _draw_game_notes(self, painter, field, scale, widths, spacing, left, hit_y):
+        positions = []
+        x = left
+        for index, width in enumerate(widths):
+            positions.append(x)
+            x += width+(spacing[index] if index < len(spacing) else 0)
+        speed = (hit_y-field.top())/self.travel_time_ms
+        for note in self.game.notes:
+            if note.status in ("hit", "missed"):
+                continue
+            index = note.lane
+            x, width = positions[index], widths[index]
+            head_y = hit_y-(note.start_ms-self.t)*speed
+            if note.status == "holding":
+                head_y = hit_y
+            tail_y = hit_y-((note.end_ms or note.start_ms)-self.t)*speed
+            if head_y < field.top()-width*2 or tail_y > field.bottom()+width*2:
+                continue
+            head_sprite = self._assets.hold_heads[index] if note.is_hold else self._assets.notes[index]
+            head = self._sprite_note_rect(head_sprite, x, width, head_y, scale, widths)
+            if note.is_hold:
+                tail_sprite = self._assets.hold_tails[index]
+                tail = self._sprite_note_rect(tail_sprite, x, width, tail_y, scale, widths)
+                body = QRectF(x, tail.center().y(), width, max(0, head.center().y()-tail.center().y()))
+                self._draw_hold_body(painter, self._assets.hold_bodies[index], body,
+                                     self._assets.body_styles[index])
+                if not self._paint_sprite(painter, tail_sprite, tail, self.t, self._assets.tail_flips[index]):
+                    painter.fillRect(tail.adjusted(3, 0, -3, 0), QColor("#b0f0ec"))
+            if not self._paint_sprite(painter, head_sprite, head, self.t):
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor("#70d7e0"))
+                painter.drawRoundedRect(head.adjusted(3, 0, -3, 0), 3, 3)
+
+    def _draw_lighting(self, painter, field, scale, widths, spacing, left, hit_y, stage_only=False):
+        if self.test_mode == "demo":
+            return
+        x = left
+        for lane, width in enumerate(widths):
+            held = lane in self.game.pressed_lanes
+            recent = 0 <= self.t-self._lane_flashes.get(lane, -1000) < 160
+            if held or recent:
+                holding_note = any(note.lane == lane and note.status == "holding"
+                                   for note in self.game.notes)
+                if stage_only:
+                    sprite = self._assets.stage_light if held else None
+                    if sprite:
+                        image = sprite.frame_at(self.t)
+                        height = image.height()/sprite.density_at(self.t)/1.6*scale
+                        light_position = self.layout["LightPosition"]
+                        bottom = field.top()+(413 if light_position is None else light_position)*scale
+                        self._paint_sprite(painter, sprite, QRectF(x, bottom-height, width, height), self.t)
+                elif recent or held and holding_note:
+                    sprite = self._assets.lighting_l if holding_note else self._assets.lighting_n
+                    if sprite:
+                        authored_width = self.layout["LightingLWidth" if holding_note else "LightingNWidth"][lane]
+                        size_factor = ((authored_width or width/scale)/30
+                                       if self._assets.version >= 2.5 else 1)
+                        age = max(0, self.t-self._lane_flashes.get(lane, self.t))
+                        logical_w, logical_h = sprite.logical_size(age)
+                        size = size_factor*scale/1.6
+                        rect = QRectF(x+width/2-logical_w*size/2, hit_y-logical_h*size/2,
+                                      logical_w*size, logical_h*size)
+                        self._paint_sprite(painter, sprite, rect, age)
+            x += width+(spacing[lane] if lane < len(spacing) else 0)
+
+    def _hud_rect(self, sprite, center_x, y, scale, elapsed=0, loop=True):
+        width, height = sprite.logical_size(elapsed, loop=loop)
+        factor = getattr(self._assets, "hud_scale", .625)*scale
+        return QRectF(center_x-width*factor/2, y-height*factor/2, width*factor, height*factor)
+
+    def _draw_judgement(self, painter, field, scale, left, total):
+        if not self._last_judgement:
+            return
+        kind, when, manual = self._last_judgement
+        age = self._effect_age(when, manual)
+        if not manual and age > 1100:
+            return
+        position = getattr(self._assets, "score_position", 300)
+        y = (field.bottom()-position*scale if self._bool(self._settings.get("upsidedown"))
+             else field.top()+position*scale)
+        sprite = self._assets.judgements.get(kind)
+        if sprite:
+            rect = self._hud_rect(sprite, left+total/2, y, scale, age, loop=manual)
+            image = sprite.frame_at(age, loop=manual)
+            painter.drawPixmap(rect, image, QRectF(image.rect()))
+        else:
+            labels = {"300g": "MAX", "300": "PERFECT", "200": "GREAT", "100": "GOOD", "50": "BAD", "0": "MISS"}
+            colours = {"300g": "#efffff", "300": "#ffe77a", "200": "#6cf3b5", "100": "#6ecbff", "50": "#c294ff", "0": "#ff6b83"}
+            painter.setFont(QFont("Segoe UI", max(8, int(20*scale)), QFont.Bold))
+            painter.setPen(QColor(colours[kind]))
+            painter.drawText(QRectF(left-100*scale, y-24*scale, total+200*scale, 48*scale),
+                             Qt.AlignCenter, labels[kind])
+
+    def _draw_combo(self, painter, field, scale, left, total):
+        combo = self.game.combo if self.test_mode != "demo" else 0
+        if self._combo_inspect:
+            combo = self._combo_inspect[0]
+        if combo <= 0:
+            return
+        position = getattr(self._assets, "combo_position", 111)
+        y = (field.bottom()-position*scale if self._bool(self._settings.get("upsidedown"))
+             else field.top()+position*scale)
+        digits = [self._assets.digits[int(value)] for value in str(combo)]
+        factor = getattr(self._assets, "hud_scale", .625)*scale
+        if all(digits):
+            sizes = [sprite.logical_size(self.t) for sprite in digits]
+            overlap = self._assets.combo_overlap*factor
+            width = sum(size[0]*factor for size in sizes)-overlap*(len(digits)-1)
+            x = left+(total-width)/2
+            for sprite, (digit_width, digit_height) in zip(digits, sizes):
+                rect = QRectF(x, y-digit_height*factor/2, digit_width*factor, digit_height*factor)
+                self._paint_sprite(painter, sprite, rect, self.t)
+                x += digit_width*factor-overlap
+        else:
+            painter.setFont(QFont("Segoe UI", max(8, int(22*scale)), QFont.Bold))
+            painter.setPen(QColor("#f1f8ff"))
+            painter.drawText(QRectF(left-50, y-28*scale, total+100, 56*scale), Qt.AlignCenter, str(combo))
+
+    def _draw_comboburst(self, painter, field, scale, left, total):
+        if not self._last_burst or not self._assets.combo_bursts:
+            return
+        when, manual = self._last_burst
+        age = self._effect_age(when, manual)
+        if not manual and age > 1500:
+            return
+        index = self._manual_burst_index if manual else max(0, self.game.combo//50-1)
+        sprite = self._assets.combo_bursts[index % len(self._assets.combo_bursts)]
+        style = str(self._settings.get("comboburststyle", "1")).strip().lower()
+        right_side = style not in ("0", "left")
+        if style in ("2", "both"):
+            # Stable uses a random side; deterministic alternation makes both
+            # placements inspectable without changing the skin's settings.
+            right_side = index % 2 == 0
+        room = max(0, field.right()-(left+total) if right_side else left-field.left())
+        if room < 1:
+            return
+        width, height = sprite.logical_size(age, loop=manual)
+        width, height = width*scale/1.6, height*scale/1.6
+        # The tester fits into a resizable editor panel. Keep the burst beside
+        # the columns and preserve its aspect ratio when the margin is narrow.
+        shrink = min(1, room/max(1, width), field.height()/max(1, height))
+        width, height = width*shrink, height*shrink
+        rect = QRectF(left+total if right_side else left-width, field.bottom()-height, width, height)
+        image = sprite.frame_at(age, loop=manual)
+        if right_side:
+            painter.save()
+            painter.translate(rect.left()+rect.right(), 0)
+            painter.scale(-1, 1)
+        painter.drawPixmap(rect, image, QRectF(image.rect()))
+        if right_side:
+            painter.restore()
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
@@ -352,7 +796,14 @@ class ManiaPreview(QWidget):
         p.fillRect(self.rect(), background)
         p.setPen(QColor("#8090aa"))
         p.setFont(QFont("Segoe UI", 9))
-        p.drawText(24, 27, f"{self.keys}K  /  " + i18n.t("preview.sample_pattern", "示例音符"))
+        if self.test_mode == "demo":
+            summary = f"{self.keys}K  /  " + i18n.t("preview.sample_pattern", "示例音符")
+        else:
+            mode = i18n.t("playtest.auto", "自动演示") if self.test_mode == "auto" else i18n.t("playtest.play", "键盘试玩")
+            summary = (f"{self.keys}K  /  {mode}    {self.game.accuracy:.2f}%    "
+                       f"{i18n.t('playtest.combo', '连击')} {self.game.combo}    "
+                       f"{i18n.t('playtest.score', '分数')} {self.game.score}")
+        p.drawText(QRectF(24, 4, self.width()-48, 32), Qt.AlignLeft | Qt.AlignVCenter, summary)
         field, scale, widths, spacing, left, hit_y = self._geometry()
         total = sum(widths)+sum(spacing)
         p.save()
@@ -380,14 +831,22 @@ class ManiaPreview(QWidget):
         if self._judgement_line:
             height = scale/1.6
             p.fillRect(QRectF(left, hit_y-height/2, total, height), self._judgement_colour)
+        self._draw_lighting(p, field, scale, widths, spacing, left, hit_y, stage_only=True)
         if self._keys_under_notes:
             self._draw_keys(p, field, scale, widths, spacing, left)
         self._draw_notes(p, field, scale, widths, spacing, left, hit_y)
         if not self._keys_under_notes:
             self._draw_keys(p, field, scale, widths, spacing, left)
+        self._draw_lighting(p, field, scale, widths, spacing, left, hit_y)
         # StageBottom is a foreground texture. The composite already includes
         # the original artwork; painting it twice would darken alpha pixels.
         self._draw_stage_bottom(p, field, scale, left, total)
+        p.restore()
+        p.save()
+        p.setClipRect(field)
+        self._draw_comboburst(p, field, scale, left, total)
+        self._draw_combo(p, field, scale, left, total)
+        self._draw_judgement(p, field, scale, left, total)
         p.restore()
         if self._show_hit_guide:
             guide_y = (field.top()+field.bottom()-hit_y
@@ -400,7 +859,15 @@ class ManiaPreview(QWidget):
             p.drawText(QRectF(left, guide_y-24, max(total, 180), 20),
                        Qt.AlignLeft | Qt.AlignVCenter, f"HitPosition {self.effective_hit_position:g}")
             p.restore()
-        if not self.skin:
+        if self.test_mode == "play" and self.skin:
+            p.setPen(QColor("#94cadf"))
+            p.setFont(QFont("Segoe UI", 9))
+            hint = (i18n.t("playtest.finished_hint", "本轮结束，点击轨道重新开始") if self.game.finished else
+                    i18n.t("playtest.click_hint", "点击轨道开始 / 继续") if not self._playing or not self._input_armed else
+                    i18n.t("playtest.escape_hint", "Esc 暂停"))
+            labels = "  ".join(self.key_labels)
+            p.drawText(QRectF(20, self.height()-26, self.width()-40, 24), Qt.AlignCenter, f"{hint}  ·  {labels}")
+        elif not self.skin:
             p.setPen(QColor("#94a3bd"))
             p.drawText(self.rect().adjusted(20, 0, -20, -8), Qt.AlignBottom | Qt.AlignHCenter,
                        i18n.t("preview.open_hint", "打开皮肤文件夹或导入 .osk，开始预览"))
