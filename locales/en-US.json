@@ -171,5 +171,32 @@
     "frames": " · {count} frames",
     "missing_refs": "Unresolved references; some use fallback assets",
     "no_combo_art": "This skin has no comboburst-mania artwork; showing combo digits"
+  },
+  "preview_window": {
+    "title": "Skin playfield preview",
+    "detach": "Detach preview",
+    "restore": "Return to editor",
+    "fullscreen": "Full screen / F11",
+    "aspect": "Aspect ratio",
+    "aspect_help": "Render the selected screen ratio with artwork and playfield scaled together; F11 opens a full-screen preview",
+    "detached_hint": "The preview is open in a separate window\nClose that window to return it here; F11 toggles full screen"
+  },
+  "std_scene": {
+    "mode_auto": "Auto test",
+    "mode_inspect": "Asset inspector",
+    "pattern": "Test scene",
+    "pattern_mixed": "Mixed scene",
+    "pattern_circles": "Circles",
+    "pattern_sliders": "Sliders",
+    "pattern_spinner": "Spinner",
+    "cs": "Circle size (CS), preview only",
+    "ar": "Approach rate (AR), preview only",
+    "help_auto": "Automatically previews circles, sliders and spinners with this skin’s cursor, digits and judgement artwork",
+    "help_inspect": "Inspect one circle; adjust its digit and layer offsets in Standard settings",
+    "footer": "Built-in Standard skin scene; no beatmap or song is loaded, and CS / AR affect this preview only"
+  },
+  "std_test": {
+    "auto": "Auto test",
+    "fallback": "Some artwork is missing; using basic shapes"
   }
 }

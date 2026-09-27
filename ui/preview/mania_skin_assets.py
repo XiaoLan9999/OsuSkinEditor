@@ -17,7 +17,8 @@ import math
 from pathlib import Path, PureWindowsPath
 
 from PySide6.QtCore import QByteArray, QBuffer, QIODevice
-from PySide6.QtGui import QColor, QImageReader, QPixmap
+from PySide6.QtGui import QColor, QImage, QImageReader, QPixmap
+from PIL import Image
 
 
 MAX_ANIMATION_FRAMES = 256
@@ -106,6 +107,24 @@ def _section(config, name):
             if str(section).casefold() == name.casefold() and isinstance(values, Mapping):
                 return _folded(values)
     return {}
+
+
+def sprite_ink_bounds(sprite):
+    """Logical alpha bounds per frame, computed once rather than while painting.
+
+    Empty margins retain their authored positions. They simply do not force a
+    whole-stage zoom-out when an otherwise small decoration has a huge canvas.
+    """
+    if sprite is None:
+        return ()
+    result = []
+    for pixmap, density in zip(sprite.frames, sprite.densities):
+        image = pixmap.toImage().convertToFormat(QImage.Format_RGBA8888)
+        rgba = Image.frombytes("RGBA", (image.width(), image.height()), bytes(image.constBits()),
+                               "raw", "RGBA", image.bytesPerLine())
+        bounds = rgba.getchannel("A").getbbox()
+        result.append(tuple(value / density for value in bounds) if bounds else None)
+    return tuple(result)
 
 
 @dataclass(frozen=True)
@@ -281,6 +300,14 @@ class ManiaSkinAssets:
         self.lighting_l = self._configured("lightingl", "lightingL")
         self.stage_hint = self._configured("stagehint", "mania-stage-hint", animated=False)
         self.stage_bottom = self._configured("stagebottom", "mania-stage-bottom")
+        # Official legacy side artwork is static. Also accept frame sequences
+        # in the tester so editing an animated variant remains inspectable.
+        self.stage_left = self._configured("stageleft", "mania-stage-left")
+        self.stage_right = self._configured("stageright", "mania-stage-right")
+        self.stage_left_bounds = sprite_ink_bounds(self.stage_left)
+        self.stage_right_bounds = sprite_ink_bounds(self.stage_right)
+        self.stage_bottom_bounds = sprite_ink_bounds(self.stage_bottom)
+        self.combo_burst_bounds = tuple(sprite_ink_bounds(sprite)[0] for sprite in self.combo_bursts)
 
     def _configured(self, option, default, **kwargs):
         name = self.settings.get(option) or default

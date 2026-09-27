@@ -30,6 +30,9 @@ class ManiaPreview(QWidget):
         self._image_density = {}
         self._stage_hint = None
         self._stage_bottom = None
+        self.viewport_aspect = None
+        self._scene_rect = QRectF()
+        self._overlay_ink_bounds = None
         self._design_overlay = None
         self._overlay_density = 2
         self.design_options = ManiaDesign()
@@ -311,6 +314,7 @@ class ManiaPreview(QWidget):
 
     def _set_overlay_image(self, image):
         self._design_overlay = None
+        self._overlay_ink_bounds = None
         if image is not None:
             rgba = image.convert("RGBA")
             # QImage must own its bytes after the local PIL image is released.
@@ -319,6 +323,7 @@ class ManiaPreview(QWidget):
             self._design_overlay = QPixmap.fromImage(qt_image)
             self._design_overlay.setDevicePixelRatio(1.0)
             self._overlay_density = image.info.get("skin_density", 2)
+            self._overlay_ink_bounds = rgba.getchannel("A").getbbox()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -480,25 +485,111 @@ class ManiaPreview(QWidget):
                 return pm
         return None
 
+    def set_viewport_aspect(self, aspect=None):
+        """Set the virtual game's width/height ratio, preserving skin units.
+
+        None retains the flexible editor viewport. Fixed aspects letterbox the
+        complete scene, including artwork extending outside the game screen.
+        """
+        if aspect is not None:
+            aspect = float(aspect)
+            if not math.isfinite(aspect) or aspect <= 0:
+                raise ValueError("Viewport aspect must be positive and finite")
+        self.viewport_aspect = aspect
+        self.update()
+
+    def _logical_scene_bounds(self, screen_width, start, total):
+        bounds = QRectF(0, 0, screen_width, 480).united(QRectF(start, 0, total, 480))
+        assets = self._assets
+        if assets is None:
+            return bounds
+        for side, sprite, ink_frames in (
+                ("left", assets.stage_left, assets.stage_left_bounds),
+                ("right", assets.stage_right, assets.stage_right_bounds)):
+            if sprite is None:
+                continue
+            for index, ink in enumerate(ink_frames):
+                if ink is None:
+                    continue
+                width = sprite.frames[index].width() / sprite.densities[index]
+                height = sprite.frames[index].height() / sprite.densities[index]
+                origin = start-width/1.6 if side == "left" else start+total
+                x1, y1, x2, y2 = ink
+                bounds = bounds.united(QRectF(origin+x1/1.6, y1*480/height,
+                                              (x2-x1)/1.6, (y2-y1)*480/height))
+        if self._design_overlay is not None and self._has_design_mask():
+            density = self._overlay_density
+            bottom_frames = ((self._design_overlay.width()/density,
+                              self._design_overlay.height()/density,
+                              tuple(v/density for v in self._overlay_ink_bounds)
+                              if self._overlay_ink_bounds else None),)
+        elif assets.stage_bottom:
+            bottom_frames = tuple((image.width()/density, image.height()/density, ink)
+                                  for image, density, ink in zip(assets.stage_bottom.frames,
+                                  assets.stage_bottom.densities, assets.stage_bottom_bounds))
+        else:
+            bottom_frames = ()
+        for width, height, ink in bottom_frames:
+            if ink is None:
+                continue
+            x1, y1, x2, y2 = ink
+            rect = QRectF(start+total/2-width/2+x1, 480-height+y1, x2-x1, y2-y1)
+            if self._bool(self._settings.get("upsidedown")):
+                rect.moveTop(480-rect.bottom())
+            bounds = bounds.united(rect)
+        style = str(self._settings.get("comboburststyle", "1")).strip().casefold()
+        sides = (False,) if style in ("0", "left") else ((False, True) if style in ("2", "both") else (True,))
+        for sprite, ink in zip(assets.combo_bursts, assets.combo_burst_bounds):
+            if ink is None:
+                continue
+            width, height = sprite.logical_size()
+            x1, y1, x2, y2 = ink
+            for right in sides:
+                x = start+total+(width-x2)/1.6 if right else start-width/1.6+x1/1.6
+                bounds = bounds.united(QRectF(x, 480-height/1.6+y1/1.6,
+                                              (x2-x1)/1.6, (y2-y1)/1.6))
+        return bounds
+
     def _geometry(self):
-        """Use the same 480-high skin coordinate system for all positions."""
+        """Fit one 480-high virtual screen and its artwork with one scale."""
         available = QRectF(self.rect().adjusted(28, 44, -28, -28))
         start = self.layout["ColumnStart"]
         start = 136 if start is None else start
-        logical_width = max(640, start + sum(self.layout["ColumnWidth"]) + sum(self.layout["ColumnSpacing"]) + 19)
-        scale = max(0.01, min(available.height()/480.0, available.width()/logical_width))
-        field = QRectF(available.left(), available.top() + (available.height()-480*scale)/2,
-                       available.width(), 480*scale)
+        column_widths = [max(1, n) for n in self.layout["ColumnWidth"]]
+        total_width = sum(column_widths) + sum(self.layout["ColumnSpacing"])
+        right = self.layout["ColumnRight"]
+        right = 19 if right is None else max(0, right)
+        logical_width = (480*self.viewport_aspect if self.viewport_aspect is not None else
+                         max(640, available.width()/max(1, available.height())*480))
+        if self.viewport_aspect is None:
+            logical_width = max(logical_width, start+total_width+right)
+        if self.layout["ColumnStart"] is None and not self.skin:
+            start = (logical_width-total_width)/2
+        bounds = self._logical_scene_bounds(logical_width, start, total_width)
+        scale = max(0.001, min(max(1, available.height())/bounds.height(),
+                               max(1, available.width())/bounds.width()))
+        origin_x = available.center().x()-bounds.width()*scale/2-bounds.left()*scale
+        origin_y = available.center().y()-bounds.height()*scale/2-bounds.top()*scale
+        field = QRectF(origin_x, origin_y, logical_width*scale, 480*scale)
+        self._scene_rect = QRectF(origin_x+bounds.left()*scale, origin_y+bounds.top()*scale,
+                                 bounds.width()*scale, bounds.height()*scale)
         widths = [max(1, n)*scale for n in self.layout["ColumnWidth"]]
         spacing = [n*scale for n in self.layout["ColumnSpacing"]]
-        total = sum(widths) + sum(spacing)
-        start = self.layout["ColumnStart"]
-        if start is None:
-            left = field.left() + (136*scale if self.skin else (field.width()-total)/2)
-        else:
-            left = field.left() + start*scale
+        left = field.left() + start*scale
         hit_y = field.top() + self.effective_hit_position*scale
         return field, scale, widths, spacing, left, hit_y
+
+    def _stage_side_rect(self, sprite, side, field, scale, left, total):
+        width, _ = sprite.logical_size(self.t)
+        width = width/1.6*scale
+        return QRectF(left-width if side == "left" else left+total,
+                      field.top(), width, field.height())
+
+    def _draw_stage_sides(self, painter, field, scale, left, total):
+        for side, sprite in (("left", self._assets.stage_left), ("right", self._assets.stage_right)):
+            if sprite is not None:
+                self._paint_sprite(painter, sprite,
+                                   self._stage_side_rect(sprite, side, field, scale, left, total), self.t)
 
     def _key_rect(self, column, lane_x, width, field, scale, key=None, density=None):
         key = self._key_images[column] if key is None else key
@@ -515,18 +606,27 @@ class ManiaPreview(QWidget):
         return QRectF(lane_x, field.bottom()-height-lift, width, height)
 
     def _stage_bottom_rect(self, left, total, field, scale):
-        image = self._design_overlay if self._design_overlay is not None else self._stage_bottom
+        image, density = self._active_stage_bottom()
         if image is None:
             return QRectF()
-        density = (self._overlay_density if self._design_overlay is not None
-                   else self._image_density.get(image.cacheKey(), 1))
         width, height = image.width()/density*scale, image.height()/density*scale
         return QRectF(left+total/2-width/2, field.bottom()-height, width, height)
 
     def _draw_stage_bottom(self, painter, field, scale, left, total):
-        image = self._design_overlay if self._design_overlay is not None else self._stage_bottom
+        image, _ = self._active_stage_bottom()
         if image is not None:
             painter.drawPixmap(self._stage_bottom_rect(left, total, field, scale), image, QRectF(image.rect()))
+
+    def _has_design_mask(self):
+        return bool(self.design_options.top_mask_height or self.design_options.top_mask_fade)
+
+    def _active_stage_bottom(self):
+        if self._design_overlay is not None and self._has_design_mask():
+            return self._design_overlay, self._overlay_density
+        if self._assets and self._assets.stage_bottom:
+            sprite = self._assets.stage_bottom
+            return sprite.frame_at(self.t), sprite.density_at(self.t)
+        return self._stage_bottom, self._image_density.get(self._stage_bottom.cacheKey(), 1) if self._stage_bottom else 1
 
     def _stage_hint_rect(self, left, total, hit_y, scale):
         if self._stage_hint is None:
@@ -931,15 +1031,8 @@ class ManiaPreview(QWidget):
             # Stable uses a random side; deterministic alternation makes both
             # placements inspectable without changing the skin's settings.
             right_side = index % 2 == 0
-        room = max(0, field.right()-(left+total) if right_side else left-field.left())
-        if room < 1:
-            return
         width, height = sprite.logical_size(age, loop=manual)
         width, height = width*scale/1.6, height*scale/1.6
-        # The tester fits into a resizable editor panel. Keep the burst beside
-        # the columns and preserve its aspect ratio when the margin is narrow.
-        shrink = min(1, room/max(1, width), field.height()/max(1, height))
-        width, height = width*shrink, height*shrink
         rect = QRectF(left+total if right_side else left-width, field.bottom()-height, width, height)
         image = sprite.frame_at(age, loop=manual)
         if right_side:
@@ -969,6 +1062,10 @@ class ManiaPreview(QWidget):
         p.drawText(QRectF(24, 4, self.width()-48, 32), Qt.AlignLeft | Qt.AlignVCenter, summary)
         field, scale, widths, spacing, left, hit_y = self._geometry()
         total = sum(widths)+sum(spacing)
+        p.save()
+        p.setClipRect(self._scene_rect)
+        self._draw_stage_sides(p, field, scale, left, total)
+        p.restore()
         p.save()
         p.setClipRect(field)
         if str(self._settings.get("upsidedown", "0")).lower() in ("1", "true"):
@@ -1005,12 +1102,17 @@ class ManiaPreview(QWidget):
         if not self._keys_under_notes:
             self._draw_keys(p, field, scale, widths, spacing, left)
         self._draw_lighting(p, field, scale, widths, spacing, left, hit_y)
-        # StageBottom is a foreground texture. The composite already includes
-        # the original artwork; painting it twice would darken alpha pixels.
-        self._draw_stage_bottom(p, field, scale, left, total)
         p.restore()
         p.save()
-        p.setClipRect(field)
+        p.setClipRect(self._scene_rect)
+        # StageBottom can extend beyond the virtual game's edges. Its entire
+        # visible bounds participate in the same scene fit as the side art.
+        p.save()
+        if self._bool(self._settings.get("upsidedown")):
+            p.translate(0, field.top()+field.bottom())
+            p.scale(1, -1)
+        self._draw_stage_bottom(p, field, scale, left, total)
+        p.restore()
         self._draw_comboburst(p, field, scale, left, total)
         self._draw_combo(p, field, scale, left, total)
         self._draw_judgement(p, field, scale, left, total)

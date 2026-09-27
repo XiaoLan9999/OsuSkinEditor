@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QPen, QPixmap, QColor, QImage, QLinearGradient, QFont
-from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtCore import Qt, QTimer, QRectF, QElapsedTimer, QPointF
 from pathlib import Path
 import math
 from PIL import Image
 from core import i18n
+from ui.preview.std_skin_assets import StdSkinAssets, number
+from ui.preview.std_scene import StdScene
 
 def _parse_rgb(val, default=(0, 255, 255)):
     if not val: return default
@@ -46,6 +48,21 @@ class StdPreview(QWidget):
         self.timer.timeout.connect(self.tick)
         self.timer.setInterval(16)
         self._playing = True
+        self._clock = QElapsedTimer()
+        self.test_mode = "inspect"
+        self.test_pattern = "mixed"
+        self.circle_size = 4.0
+        self.approach_rate = 5.0
+        self.viewport_aspect = 16/9
+        self._scene_assets = None
+        self._scene = None
+        self._manual_judgement = None
+        self._manual_burst = None
+        self._burst_index = -1
+        self._inspection_clock = QElapsedTimer()
+        self._inspection_timer = QTimer(self)
+        self._inspection_timer.setInterval(33)
+        self._inspection_timer.timeout.connect(self.update)
         self.preview_scale = 1.0
         self._mouse_position = None
         self.setMouseTracking(True)
@@ -93,17 +110,91 @@ class StdPreview(QWidget):
 
     def set_playing(self, playing: bool):
         self._playing = bool(playing)
+        if self._playing:
+            self._manual_judgement = None
+            self._manual_burst = None
+            self._inspection_timer.stop()
         if self._playing and self.isVisible():
+            if not self.timer.isActive():
+                self._clock.start()
             self.timer.start()
         else:
             self.timer.stop()
+            self._clock.invalidate()
+        self.update()
+
+    def set_test_mode(self, mode):
+        if mode not in ("auto", "inspect"):
+            raise ValueError("Unknown Standard preview mode")
+        if mode != self.test_mode:
+            self.test_mode = mode
+            self.restart_demo()
+
+    def set_test_pattern(self, pattern):
+        if pattern not in ("mixed", "circles", "sliders", "spinner"):
+            raise ValueError("Unknown Standard scene pattern")
+        self.test_pattern = pattern
+        if self._scene:
+            self._scene.set_pattern(pattern)
+        self.restart_demo()
+
+    def set_circle_size(self, value):
+        self.circle_size = number(value, 4, 0, 10)
+        self.update()
+
+    def set_approach_rate(self, value):
+        self.approach_rate = number(value, 5, 0, 10)
+        self.update()
+
+    def set_viewport_aspect(self, ratio):
+        self.viewport_aspect = number(ratio, 16/9, 4/3, 3)
+        self.update()
+
+    @property
+    def approach_preempt(self):
+        return 1800-120*self.approach_rate if self.approach_rate <= 5 else 1200-150*(self.approach_rate-5)
+
+    def restart_demo(self):
+        self.t = 0
+        self._manual_judgement = None
+        self._manual_burst = None
+        self._inspection_timer.stop()
+        self._inspection_clock.invalidate()
+        if self.timer.isActive():
+            self._clock.start()
+        else:
+            self._clock.invalidate()
+        self.update()
+
+    def show_judgement(self, kind):
+        kind = str(kind).lower()
+        kind = {"miss": "0", "great": "300", "good": "100", "meh": "50"}.get(kind, kind)
+        if kind not in ("300", "100", "50", "0"):
+            raise ValueError("Unknown Standard judgement")
+        self._manual_judgement = kind
+        self._inspection_clock.start()
+        if self.isVisible():
+            self._inspection_timer.start()
+        self.update()
+
+    def show_comboburst(self):
+        self._burst_index += 1
+        self._manual_burst = self._burst_index
+        self._inspection_clock.start()
+        if self.isVisible():
+            self._inspection_timer.start()
+        self.update()
 
     def showEvent(self, event):
         super().showEvent(event)
         self.set_playing(self._playing)
+        if self._manual_judgement is not None or self._manual_burst is not None:
+            self._inspection_timer.start()
 
     def hideEvent(self, event):
         self.timer.stop()
+        self._clock.invalidate()
+        self._inspection_timer.stop()
         super().hideEvent(event)
 
     def set_approach_center_mode(self, mode:str):
@@ -201,11 +292,58 @@ class StdPreview(QWidget):
         self.setCursor(Qt.BlankCursor if self.pm_cursor else Qt.ArrowCursor)
 
     def set_skin(self, skin):
-        self.skin=skin; self.t=0; self._load_assets(); self.update()
+        self.skin=skin
+        self._load_assets()
+        self._scene_assets = StdSkinAssets(skin)
+        self._scene = StdScene(self._scene_assets)
+        self._scene.set_pattern(self.test_pattern)
+        self.restart_demo()
 
     # ---------- draw ----------
     def tick(self):
-        self.t=(self.t+16)%1600; self.update()
+        if not self._playing or not self.isVisible():
+            return
+        if self._clock.isValid():
+            self.t += self._clock.restart()
+        else:
+            self._clock.start()
+        self.update()
+
+    def _scene_geometry(self):
+        available = QRectF(self.rect().adjusted(16, 36, -16, -30))
+        width = 480*self.viewport_aspect
+        bounds = self._scene.viewport_bounds(width) if self._scene else QRectF(0, 0, width, 480)
+        scale = max(.01, min(available.width()/bounds.width(), available.height()/bounds.height())*min(1, self.preview_scale))
+        rect = QRectF(available.center().x()-bounds.width()*scale/2, available.center().y()-bounds.height()*scale/2,
+                      bounds.width()*scale, bounds.height()*scale)
+        return rect, scale, width
+
+    def _paint_scene(self, p):
+        rect, scale, width = self._scene_geometry()
+        p.fillRect(rect, QColor("#060b13"))
+        p.setPen(QColor("#809ab7"))
+        p.setFont(QFont("Segoe UI", 9))
+        p.drawText(QRectF(18, 3, self.width()-36, 28), Qt.AlignVCenter,
+                   f"osu!  /  {i18n.t('std_test.auto', '自动测试')}    CS {self.circle_size:g}  ·  AR {self.approach_rate:g}")
+        p.save()
+        p.setClipRect(rect)
+        bounds = self._scene.viewport_bounds(width)
+        p.translate(rect.left()-bounds.left()*scale, rect.top()-bounds.top()*scale)
+        p.scale(scale, scale)
+        age = self._inspection_clock.elapsed() if self._inspection_clock.isValid() else 0
+        manual = (self._manual_judgement, age) if self._manual_judgement is not None else None
+        burst = (self._manual_burst, age) if self._manual_burst is not None else None
+        pointer = (QPointF((self._mouse_position.x()-rect.left())/scale+bounds.left(),
+                          (self._mouse_position.y()-rect.top())/scale+bounds.top())
+                   if self._mouse_position is not None and rect.contains(self._mouse_position) else None)
+        self._scene.paint(p, self.t, width, self.circle_size, self.approach_preempt,
+                          self.user_offsets, manual, burst, pointer)
+        p.restore()
+        if self._scene_assets.missing:
+            p.setPen(QColor("#7b95af"))
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(18, self.height()-27, self.width()-36, 24), Qt.AlignVCenter,
+                       i18n.t("std_test.fallback", "缺少部分素材，使用基础图形")+"  ·  "+", ".join(self._scene_assets.missing))
 
     def _draw_centered(self, painter:QPainter, cx:int, cy:int, pm:QPixmap, off, extra=(0,0)):
         if not pm: return
@@ -243,6 +381,10 @@ class StdPreview(QWidget):
             p.setFont(QFont("Segoe UI", 11)); p.setPen(QColor("#94a3bd"))
             p.drawText(QRectF(20,cy+102,self.width()-40,42), Qt.AlignCenter,
                        i18n.t("preview.open_hint", "打开皮肤文件夹或导入 .osk，开始预览"))
+            return
+
+        if self.test_mode == "auto":
+            self._paint_scene(p)
             return
 
         cx,cy=self.width()//2,self.height()//2

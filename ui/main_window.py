@@ -20,6 +20,9 @@ from ui.preview.mania_preview import ManiaPreview
 from ui.mania_ini_dock import ManiaIniDock
 from ui.mania_design_dock import ManiaDesignDock
 from ui.mania_preview_controls import ManiaPreviewControls
+from ui.std_preview_controls import StdPreviewControls
+from ui.detached_preview import DetachedPreviewWindow
+from ui.widgets.wheel_guard import ClickWheelComboBox
 from ui.widgets.asset_inspector import AssetInspector
 from ui.widgets.identity import AvatarBadge, TechPanel, WelcomeCanvas
 from ui.icons import workspace_icon
@@ -64,6 +67,9 @@ class MainWindow(QMainWindow):
         self.loader = SkinLoader()
         self.settings = QSettings()
         self.osu_root = self._load_osu_root()
+        self._preview_window = None
+        self._preview_placeholder = None
+        self._preview_split_sizes = None
 
         self._build_workspace()
 
@@ -198,7 +204,7 @@ class MainWindow(QMainWindow):
         self.act_mania_show.triggered.connect(lambda checked: self.mania_ini_dock.setVisible(bool(checked)))
         self.mania_ini_dock.visibilityChanged.connect(self.act_mania_show.setChecked)
         self.act_mania_show.setChecked(False)
-        self.btn_mania.clicked.connect(lambda: self.mania_ini_dock.setVisible(not self.mania_ini_dock.isVisible()))
+        self.btn_mania.clicked.connect(self._show_mania_settings)
 
         self.mania_design_dock = ManiaDesignDock(self)
         self.addDockWidget(Qt.RightDockWidgetArea, self.mania_design_dock)
@@ -228,6 +234,15 @@ class MainWindow(QMainWindow):
         self.mania_preview.set_demo_bpm(self.mania_playback.tempo.value())
         self.mania_preview.set_test_mode(self.mania_playback.test_mode.currentData())
         self.mania_preview.set_test_pattern(self.mania_playback.test_pattern.currentData())
+        self.std_playback.mode_changed.connect(self._change_std_mode)
+        self.std_playback.pattern_changed.connect(self.std_preview.set_test_pattern)
+        self.std_playback.circle_size_changed.connect(self.std_preview.set_circle_size)
+        self.std_playback.approach_rate_changed.connect(self.std_preview.set_approach_rate)
+        self.std_playback.restart_requested.connect(self.std_preview.restart_demo)
+        self.std_playback.judgement_requested.connect(self._inspect_std_judgement)
+        self.std_playback.combo_requested.connect(self._inspect_std_combo)
+        self.std_preview.set_test_mode(self.std_playback.mode.currentData())
+        self._change_viewport_aspect()
 
         self._refresh_recent_menu()
         self.retranslate()
@@ -292,9 +307,11 @@ class MainWindow(QMainWindow):
         tools = QHBoxLayout(); self.btn_images = QPushButton(); self.btn_audio = QPushButton()
         tools.addWidget(self.btn_images); tools.addWidget(self.btn_audio); sidebar_layout.addLayout(tools)
         self.splitter.addWidget(sidebar)
-        preview_panel = TechPanel("PreviewPanel")
+        preview_panel = self.preview_panel = TechPanel("PreviewPanel")
         preview_layout = QVBoxLayout(preview_panel); preview_layout.setContentsMargins(18, 16, 18, 14); preview_layout.setSpacing(12)
-        preview_heading = QHBoxLayout()
+        self.preview_header = QWidget()
+        preview_heading = QHBoxLayout(self.preview_header)
+        preview_heading.setContentsMargins(0, 0, 0, 0)
         self.preview_label = QLabel(); self.preview_label.setObjectName("SectionTitle")
         self.preview_badge = QLabel(); self.preview_badge.setObjectName("Badge")
         preview_heading.addWidget(self.preview_label); preview_heading.addWidget(self.preview_badge); preview_heading.addStretch()
@@ -313,7 +330,29 @@ class MainWindow(QMainWindow):
         self.btn_design = QPushButton()
         self.btn_design.setObjectName("PrimaryButton")
         preview_heading.addWidget(self.btn_pause); preview_heading.addWidget(self.btn_mania); preview_heading.addWidget(self.btn_design)
-        preview_layout.addLayout(preview_heading)
+        preview_layout.addWidget(self.preview_header)
+        self.preview_window_controls = QWidget()
+        window_controls = QHBoxLayout(self.preview_window_controls)
+        window_controls.setContentsMargins(0, 0, 0, 0)
+        self.aspect_label = QLabel()
+        self.aspect_label.setObjectName("Muted")
+        self.preview_aspect = ClickWheelComboBox()
+        for label, ratio in (("16:10", 1.6), ("16:9", 16/9), ("4:3", 4/3)):
+            self.preview_aspect.addItem(label, ratio)
+        self.preview_aspect.currentIndexChanged.connect(self._change_viewport_aspect)
+        self.btn_detach = QPushButton()
+        self.btn_detach.clicked.connect(self._toggle_preview_window)
+        self.btn_fullscreen = QPushButton()
+        self.btn_fullscreen.clicked.connect(self._toggle_preview_fullscreen)
+        window_controls.addWidget(self.aspect_label)
+        window_controls.addWidget(self.preview_aspect)
+        window_controls.addStretch(1)
+        window_controls.addWidget(self.btn_detach)
+        window_controls.addWidget(self.btn_fullscreen)
+        preview_layout.addWidget(self.preview_window_controls)
+        self.std_playback = StdPreviewControls()
+        self.std_playback.hide()
+        preview_layout.addWidget(self.std_playback)
         self.mania_playback = ManiaPreviewControls()
         preview_layout.addWidget(self.mania_playback)
         self.mania_playback.hide()
@@ -346,8 +385,14 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _preview_mode_changed(self, index):
-        self.preview_zoom.setVisible(index == 0)
-        self.mania_playback.setVisible(index == 1 and self.skin is not None)
+        fullscreen = self._preview_window is not None and self._preview_window.isFullScreen()
+        self.preview_zoom.setVisible(index == 0 and self.std_playback.mode.currentData() == "inspect")
+        self.mania_playback.setVisible(index == 1 and self.skin is not None and not fullscreen)
+        self.std_playback.setVisible(index == 0 and self.skin is not None and not fullscreen)
+        self.preview_header.setVisible(not fullscreen)
+        self.preview_window_controls.setVisible(not fullscreen)
+        self.preview_note.setVisible(not fullscreen)
+        self.tabs.tabBar().setVisible(not fullscreen)
         self.btn_mania.setVisible(index == 1)
         self.btn_design.setVisible(index == 1)
         preview = self.mania_preview if index == 1 else self.std_preview
@@ -359,12 +404,115 @@ class MainWindow(QMainWindow):
 
     def _refresh_playtest_help(self):
         self.mania_playback.update_input_hint(self.mania_preview.key_labels)
+        self.std_playback.update_hint()
+        std_scene = self.tabs.currentIndex() == 0 and self.std_playback.mode.currentData() == "auto"
         if hasattr(self, "preview_badge"):
-            key = "playtest.badge" if self.tabs.currentIndex() == 1 and self.mania_playback.test_mode.currentData() != "demo" else "workspace.demo"
+            key = "playtest.badge" if std_scene or (self.tabs.currentIndex() == 1 and self.mania_playback.test_mode.currentData() != "demo") else "workspace.demo"
             self.preview_badge.setText(i18n.t(key))
         if hasattr(self, "preview_note"):
-            key = "playtest.footer" if self.tabs.currentIndex() == 1 and self.mania_playback.test_mode.currentData() != "demo" else "workspace.preview_note"
+            key = "std_scene.footer" if std_scene else "playtest.footer" if self.tabs.currentIndex() == 1 and self.mania_playback.test_mode.currentData() != "demo" else "workspace.preview_note"
             self.preview_note.setText(i18n.t(key))
+
+    def _change_std_mode(self, mode):
+        self.std_preview.set_test_mode(mode)
+        self._preview_mode_changed(self.tabs.currentIndex())
+
+    def _inspect_std_judgement(self, kind):
+        self.btn_pause.setChecked(True)
+        self.std_preview.show_judgement(kind)
+
+    def _inspect_std_combo(self):
+        self.btn_pause.setChecked(True)
+        self.std_preview.show_comboburst()
+
+    def _change_viewport_aspect(self, index=None):
+        ratio = self.preview_aspect.currentData()
+        self.std_preview.set_viewport_aspect(ratio)
+        self.mania_preview.set_viewport_aspect(ratio)
+
+    def _toggle_preview_window(self):
+        if self._preview_window is None:
+            self._detach_preview()
+        else:
+            self._restore_preview()
+
+    def _detach_preview(self):
+        if self._preview_window is not None:
+            self._preview_window.raise_()
+            return
+        self._preview_split_sizes = self.splitter.sizes()
+        if self._preview_placeholder is None:
+            self._preview_placeholder = TechPanel("PreviewPlaceholder")
+            layout = QVBoxLayout(self._preview_placeholder)
+            layout.setAlignment(Qt.AlignCenter)
+            self.detached_hint = QLabel()
+            self.detached_hint.setObjectName("Muted")
+            self.detached_hint.setAlignment(Qt.AlignCenter)
+            self.detached_hint.setWordWrap(True)
+            self.btn_restore_preview = QPushButton()
+            self.btn_restore_preview.clicked.connect(self._restore_preview)
+            layout.addWidget(self.detached_hint)
+            layout.addWidget(self.btn_restore_preview)
+        self.splitter.replaceWidget(1, self._preview_placeholder)
+        self._preview_placeholder.show()
+        host = DetachedPreviewWindow()
+        host.setWindowIcon(self.windowIcon())
+        self._preview_window = host
+        host.restore_requested.connect(lambda: self._restore_preview(closing_host=True))
+        host.fullscreen_changed.connect(lambda _: self._preview_mode_changed(self.tabs.currentIndex()))
+        host.setCentralWidget(self.preview_panel)
+        for action in (self.act_open, self.act_reload):
+            host.addAction(action)
+        host.show()
+        self.preview_panel.show()
+        self._retranslate_preview_window()
+        self._preview_mode_changed(self.tabs.currentIndex())
+
+    def _restore_preview(self, closing_host=False):
+        host = self._preview_window
+        if host is None:
+            return
+        self._preview_window = None
+        panel = host.takeCentralWidget()
+        self.splitter.replaceWidget(1, panel)
+        self._preview_placeholder.hide()
+        self._preview_placeholder.setParent(self)
+        panel.show()
+        if self._preview_split_sizes:
+            self.splitter.setSizes(self._preview_split_sizes)
+        if not closing_host:
+            host.close()
+        host.deleteLater()
+        self._retranslate_preview_window()
+        self._preview_mode_changed(self.tabs.currentIndex())
+
+    def _toggle_preview_fullscreen(self):
+        if self._preview_window is None:
+            self._detach_preview()
+        self._preview_window.toggle_fullscreen()
+
+    def _retranslate_preview_window(self):
+        self.aspect_label.setText(i18n.t("preview_window.aspect", "画面比例"))
+        self.preview_aspect.setAccessibleName(self.aspect_label.text())
+        self.preview_aspect.setToolTip(i18n.t("preview_window.aspect_help"))
+        self.btn_detach.setText(i18n.t("preview_window.restore" if self._preview_window else "preview_window.detach"))
+        self.btn_fullscreen.setText(i18n.t("preview_window.fullscreen"))
+        if self._preview_placeholder is not None:
+            self.detached_hint.setText(i18n.t("preview_window.detached_hint"))
+            self.btn_restore_preview.setText(i18n.t("preview_window.restore"))
+        if self._preview_window is not None:
+            self._preview_window.retranslate()
+            if self.skin is not None:
+                self._preview_window.setWindowTitle(
+                    self._preview_window.windowTitle()+" · "+self.skin_title.text())
+
+    def _show_mania_settings(self):
+        self.mania_ini_dock.setVisible(not self.mania_ini_dock.isVisible())
+        if self.mania_ini_dock.isVisible() and self._preview_window is not None:
+            if self.isMinimized():
+                self.showNormal()
+            self.raise_()
+            self.activateWindow()
 
     def _change_test_mode(self, mode):
         self.mania_preview.set_test_mode(mode)
@@ -419,6 +567,9 @@ class MainWindow(QMainWindow):
             lines.append("")
         for kind, sprite in assets.judgements.items():
             lines.append(f"Hit{kind}: {describe(sprite)}")
+        for name, sprite in (("StageLeft", assets.stage_left), ("StageRight", assets.stage_right),
+                             ("StageBottom", assets.stage_bottom), ("StageHint", assets.stage_hint)):
+            lines.append(f"{name}: {describe(sprite)}")
         lines.append(f"ComboPrefix: {assets.combo_prefix}")
         lines.extend(f"{assets.combo_prefix}-{digit}: {describe(sprite)}" for digit, sprite in enumerate(assets.digits))
         lines.extend(f"comboburst-mania[{index}]: {describe(sprite)}" for index, sprite in enumerate(assets.combo_bursts))
@@ -462,6 +613,11 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(1)
         self.mania_design_dock.show()
         self.mania_design_dock.raise_()
+        if self._preview_window is not None:
+            if self.isMinimized():
+                self.showNormal()
+            self.raise_()
+            self.activateWindow()
 
     def _confirm_design_navigation(self):
         self._guarding_design = True
@@ -528,6 +684,7 @@ class MainWindow(QMainWindow):
         self.preview_stack.setCurrentIndex(1 if loaded else 0)
         for control in (self.btn_folder, self.btn_reload, self.btn_images, self.btn_audio, self.btn_pause,
                         self.btn_mania, self.btn_design, self.mania_playback, self.act_design_show,
+                        self.std_playback, self.preview_aspect, self.btn_detach, self.btn_fullscreen,
                         self.preview_zoom, self.asset_search, self.asset_filter, self.act_reload,
                         self.act_assets_images, self.act_assets_audio, self.act_mania_show, self.act_debug_show):
             control.setEnabled(loaded)
@@ -541,6 +698,7 @@ class MainWindow(QMainWindow):
             self.skin_title.setText(i18n.t("workspace.title"))
             self.skin_path.setText(i18n.t("workspace.subtitle"))
         self._filter_assets()
+        self._retranslate_preview_window()
         self._preview_mode_changed(self.tabs.currentIndex())
 
     def _filter_assets(self, *args):
@@ -717,6 +875,7 @@ class MainWindow(QMainWindow):
         if not self._confirm_design_navigation():
             event.ignore()
             return
+        self._restore_preview()
         # 仍保存窗口布局，但界面启动后会强制隐藏两个调试类面板
         self.settings.setValue("ui/geometry", self.saveGeometry())
         self.settings.setValue("ui/state", self.saveState())
@@ -764,7 +923,7 @@ class MainWindow(QMainWindow):
             "<b>作者：小蓝（XiaoLanツ / XiaoLan9999）</b><br>"
             "谢谢你使用本工具，欢迎反馈与交流！<br>"
             "后续还会进行更新<br>"
-            "（Std的问题太多了暂时搞不完）<br>"
+            "支持 Standard / Mania 皮肤预览与 Mania 配置编辑<br>"
             "<b>有建议请直接告诉我！！<b>"
         )
         lab = QLabel(html, dlg)
@@ -830,6 +989,8 @@ class MainWindow(QMainWindow):
         self.btn_design.setText(i18n.t("workspace.design", "皮肤设计"))
         self.act_design_show.setText(i18n.t("workspace.design", "皮肤设计"))
         self.mania_playback.retranslate()
+        self.std_playback.retranslate()
+        self._retranslate_preview_window()
         self.mania_design_dock.retranslate()
         self.preview_zoom.setToolTip(i18n.t("workspace.zoom", "Standard preview zoom"))
         for index, key in enumerate(("all", "std", "mania", "other")):

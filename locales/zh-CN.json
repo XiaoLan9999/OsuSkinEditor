@@ -171,5 +171,32 @@
     "frames": " · {count} 帧",
     "missing_refs": "未找到的引用，部分项目使用回退",
     "no_combo_art": "这套皮肤没有 comboburst-mania 连击插画，当前展示连击数字"
+  },
+  "preview_window": {
+    "title": "皮肤游玩预览",
+    "detach": "独立窗口",
+    "restore": "放回主窗口",
+    "fullscreen": "全屏 / F11",
+    "aspect": "画面比例",
+    "aspect_help": "按所选屏幕比例绘制，侧图与轨道统一缩放；F11 可在独立窗口中全屏查看",
+    "detached_hint": "游玩预览已在独立窗口中打开\n关闭独立窗口可放回这里，F11 切换全屏"
+  },
+  "std_scene": {
+    "mode_auto": "自动测试",
+    "mode_inspect": "素材检查",
+    "pattern": "测试场景",
+    "pattern_mixed": "混合场景",
+    "pattern_circles": "圆圈",
+    "pattern_sliders": "滑条",
+    "pattern_spinner": "转盘",
+    "cs": "圆圈大小 CS，仅影响预览",
+    "ar": "缩圈速度 AR，仅影响预览",
+    "help_auto": "自动展示圆圈、滑条与转盘，使用当前皮肤的光标、数字和判定素材",
+    "help_inspect": "单个圆圈素材检查，可在 Standard 设置中调整数字与图层偏移",
+    "footer": "内置 Standard 皮肤测试场景，不读取谱面或播放歌曲，CS / AR 仅用于预览"
+  },
+  "std_test": {
+    "auto": "自动测试",
+    "fallback": "缺少部分素材，使用基础图形"
   }
 }
