@@ -43,6 +43,14 @@ Windows 版下载后直接运行，无需安装 Python
 
 素材读取支持皮肤子目录、大小写不同的路径、`@2x` 与连续动画帧，动画优先于静态图，缺失素材使用回退效果并在映射中标明，作者提供的透明图片会保持透明
 
+长条按皮肤的 `NoteBodyStyle` 绘制，`RepeatBottom` 保留主体图片顶部，并在长度超出图片时延展底部像素行，不会把超长图片的底端裁切到尾部，Capoo 等皮肤画在主体顶部的圆角与透明留白因此能够保留
+
+长按过程中主体按原始长度绘制，再随按键位置裁切，避免剩余长度变短时重拉伸纹理；尾图的反向锚点和透明图片尺寸也参与定位
+
+连击数字读取 `ColourHold` / `ColourBreak`，长按时变色，命中时纵向弹跳，断连时显示颜色扩散；自动测试与试玩的判定图带缩放和淡出，「判定图」检查则保持原尺寸并独立循环动画
+
+这些规则参考 [osu! 开发者对长条像素延展的说明](https://osu.ppy.sh/community/forums/topics/341098)、[长条几何实现](https://github.com/ppy/osu/blob/master/osu.Game.Rulesets.Mania/Objects/Drawables/DrawableHoldNote.cs)及 [Mania 连击显示实现](https://github.com/ppy/osu/blob/master/osu.Game.Rulesets.Mania/Skinning/Legacy/LegacyManiaComboCounter.cs)，stable 与 lazer 自身仍有[已记录的长条兼容差异](https://github.com/ppy/osu/issues/35502)
+
 ![Mania 皮肤设计与演示预览](docs/images/designer.png)
 
 *上图使用演示素材，展示 Mania 播放控制与皮肤设计面板*
@@ -119,6 +127,7 @@ Windows 版下载后直接运行，无需安装 Python
 - 当前 `main` 的 Mania 试玩使用 60 秒内置排列，不导入 `.osu` 谱面、不播放歌曲，也不模拟谱面 SV、音乐同步或游戏 Mod
 - 试玩采用简化计分，长条头尾分别判定，提前松开会让尾部判为 MISS，没有游戏中的完整长条计分、血量或奖励分，测试分数不能与 osu! 成绩比较
 - 1–18K 均可检查音符，多舞台配置目前按连续轨道显示，尚未完整复刻舞台分离、全部方向翻转选项和所有旧版长条贴图细节
+- 长按颜色使用配置原色与 120ms 平滑过渡，断连显示扩散淡出，尚未复刻 stable 的精确颜色过渡曲线与逐数字滚降
 - 连击图在轨道侧边按可用空间等比例缩小，`ComboBurstStyle: 2` 交替展示两侧以方便检查，未复刻游戏内全部随机与入场动画
 - Standard 仍为圆圈素材预览，不模拟完整滑条、转盘或谱面游玩，最终效果仍需到游戏内确认
 - 可保存的上隐目前支持**普通下落方向、单舞台 1–9K**

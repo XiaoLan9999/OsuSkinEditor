@@ -227,7 +227,7 @@ class ManiaPlaytestUiTests(unittest.TestCase):
         head_y, tail_y = hit-100*velocity, hit-400*velocity
         image = self.preview.grab().toImage()
         self.assertEqual(image.pixelColor(int(left+30), int(head_y-30)).name(), "#cc11cc")
-        self.assertEqual(image.pixelColor(int(left+30), int(tail_y-30)).name(), "#ff8811")
+        self.assertEqual(image.pixelColor(int(left+30), int(tail_y+30)).name(), "#ff8811")
         self.assertEqual(image.pixelColor(int(left+30), int((head_y+tail_y)/2)).name(), "#11cccc")
         for i in range(1, 4):
             self.assertEqual(image.pixelColor(int(left+i*60+30), int(head_y-30)).name(), colours[i])
@@ -247,7 +247,7 @@ class ManiaPlaytestUiTests(unittest.TestCase):
         image = self.preview.grab().toImage()
         self.assertEqual(image.pixelColor(int(left+30), int(field.bottom()-25)).name(), "#223344")
 
-    def test_repeat_bottom_crops_tall_hold_art_without_stretching(self):
+    def test_repeat_bottom_preserves_top_of_tall_hold_art_without_stretching(self):
         body = QImage(60, 600, QImage.Format_ARGB32)
         body.fill(QColor("red"))
         for y in range(540, 600):
@@ -263,9 +263,10 @@ class ManiaPlaytestUiTests(unittest.TestCase):
         field, scale, widths, spacing, left, hit = self.preview._geometry()
         head_bottom = hit-100*(hit-field.top())/self.preview.travel_time_ms
         image = self.preview.grab().toImage()
-        # This is 40 px from the body's bottom, above the head. A stretched
-        # 600px gradient would sample the red area instead of its blue cap.
-        self.assertEqual(image.pixelColor(int(left+30), int(head_bottom-70)).name(), "#0000ff")
+        # RepeatBottom preserves the top then extends the last pixel row.
+        # A short hold samples the red TOP of this tall image, not the blue
+        # bottom as the former bottom-aligned whole-texture tiling did.
+        self.assertEqual(image.pixelColor(int(left+30), int(head_bottom-70)).name(), "#ff0000")
 
     def test_upside_down_moves_hud_positions_without_flipping_judgement_art(self):
         self.png("top.png", "#44ff22", (80, 32))

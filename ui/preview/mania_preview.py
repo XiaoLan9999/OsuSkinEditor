@@ -45,6 +45,7 @@ class ManiaPreview(QWidget):
         self._last_burst = None
         self._manual_burst_index = -1
         self._combo_inspect = None
+        self._reset_hud_effects()
         self._lane_flashes = {}
         self._inspection_time = 0
         self._inspection_clock = QElapsedTimer()
@@ -171,6 +172,7 @@ class ManiaPreview(QWidget):
 
     def _accept_events(self, events):
         for event in events:
+            self._accept_hud_event(event)
             self._last_judgement = (event.judgement, event.time_ms, False)
             if event.judgement != "0":
                 self._lane_flashes[event.lane] = event.time_ms
@@ -268,6 +270,7 @@ class ManiaPreview(QWidget):
         self._last_judgement = None
         self._last_burst = None
         self._combo_inspect = None
+        self._reset_hud_effects()
         self._lane_flashes.clear()
         self._sync_inspection_timer()
         if self.test_mode == "play":
@@ -553,7 +556,9 @@ class ManiaPreview(QWidget):
                 key, density = sprite.frame_at(self.t), sprite.density_at(self.t)
             rect = self._key_rect(index, lane_x, width, field, scale, key, density)
             if key is not None:
-                painter.drawPixmap(rect, key, QRectF(key.rect()))
+                flags = self._assets.key_down_flips if pressed else self._assets.key_flips
+                flip = self._bool(self._settings.get("upsidedown")) and not flags[index]
+                self._paint_pixmap(painter, key, rect, flip)
             else:
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor("#66ddeb" if pressed else "#29364a"))
@@ -573,7 +578,8 @@ class ManiaPreview(QWidget):
                 bottom = field.top() + progress*(hit_y-field.top())
                 rect = self._note_rect(index, lane_x, width, bottom, scale, widths)
                 if note is not None:
-                    painter.drawPixmap(rect, note, QRectF(note.rect()))
+                    flip = self._bool(self._settings.get("upsidedown")) and not self._assets.note_flips[index]
+                    self._paint_pixmap(painter, note, rect, flip)
                 else:
                     painter.setPen(Qt.NoPen)
                     painter.setBrush(QColor("#70d7e0"))
@@ -588,10 +594,7 @@ class ManiaPreview(QWidget):
         return QRectF(lane_x, bottom-height, width, height)
 
     @staticmethod
-    def _paint_sprite(painter, sprite, rect, elapsed, flip=False):
-        if sprite is None or rect.isEmpty():
-            return False
-        image = sprite.frame_at(elapsed)
+    def _paint_pixmap(painter, image, rect, flip=False):
         if flip:
             painter.save()
             painter.translate(0, rect.top()+rect.bottom())
@@ -599,40 +602,60 @@ class ManiaPreview(QWidget):
         painter.drawPixmap(rect, image, QRectF(image.rect()))
         if flip:
             painter.restore()
+
+    @staticmethod
+    def _paint_sprite(painter, sprite, rect, elapsed, flip=False):
+        if sprite is None or rect.isEmpty():
+            return False
+        ManiaPreview._paint_pixmap(painter, sprite.frame_at(elapsed), rect, flip)
         return True
 
     def _draw_hold_body(self, painter, sprite, rect, style):
+        if rect.isEmpty():
+            return
         if sprite is None:
             painter.fillRect(rect.adjusted(rect.width()*.2, 0, -rect.width()*.2, 0), QColor("#4ba6b8"))
             return
         if not style:
             self._paint_sprite(painter, sprite, rect, self.t)
             return
-        if style == 4:
-            # Preserve artwork at both caps, cropping the join in the middle.
-            # This avoids stretching tall gradient bodies into short holds.
-            for top_half, anchor in ((True, 2), (False, 3)):
-                painter.save()
-                half = QRectF(rect.left(), rect.top() if top_half else rect.center().y(),
-                              rect.width(), rect.height()/2)
-                painter.setClipRect(half, Qt.IntersectClip)
-                self._draw_hold_body(painter, sprite, rect, anchor)
-                painter.restore()
-            return
         image = sprite.frame_at(self.t)
-        tile_height = max(1, rect.width()*image.height()/image.width())
+        unit = rect.width()/image.width()
+        texture_height = image.height()*unit
         painter.save()
         painter.setClipRect(rect, Qt.IntersectClip)
-        # Align repeating textures to the selected cap while keeping the body
-        # clipped. The loop is bounded by the on-screen lane height.
-        visible_top = max(rect.top(), painter.clipBoundingRect().top())
-        visible_bottom = min(rect.bottom(), painter.clipBoundingRect().bottom())
-        origin = rect.bottom() if style == 3 else rect.top()
-        first = origin+math.floor((visible_top-origin)/tile_height)*tile_height
-        y = first
-        for _ in range(min(2048, max(0, math.ceil((visible_bottom-first)/tile_height)))):
-            self._paint_sprite(painter, sprite, QRectF(rect.left(), y, rect.width(), tile_height), self.t)
-            y += tile_height
+        visible = rect.intersected(painter.clipBoundingRect())
+
+        def draw_texture(origin):
+            top = max(visible.top(), origin)
+            bottom = min(visible.bottom(), origin+texture_height)
+            if bottom > top:
+                # Explicit source cropping avoids painting a 40000px texture
+                # into a huge destination just to retain a few visible rows.
+                painter.drawPixmap(QRectF(rect.left(), top, rect.width(), bottom-top), image,
+                                   QRectF(0, (top-origin)/unit, image.width(), (bottom-top)/unit))
+
+        if style == 1:
+            first = rect.top()+math.floor((visible.top()-rect.top())/texture_height)*texture_height
+            count = min(2048, max(0, math.ceil((visible.bottom()-first)/texture_height)))
+            for index in range(count):
+                draw_texture(first+index*texture_height)
+        else:
+            # RepeatBottom preserves the TOP of the artwork and extends its
+            # bottom edge, not a bottom-aligned repeated copy of the image.
+            # See osu!dev's explanation: forums/topics/341098. This preserves
+            # the transparent lead-in and rounded cap of Percy-style LN art.
+            origin = (rect.bottom()-texture_height if style == 2 else
+                      rect.center().y()-texture_height/2 if style == 4 else rect.top())
+            draw_texture(origin)
+            if visible.top() < origin:
+                bottom = min(origin, visible.bottom())
+                painter.drawPixmap(QRectF(rect.left(), visible.top(), rect.width(), bottom-visible.top()),
+                                   image, QRectF(0, 0, image.width(), 1))
+            if visible.bottom() > origin+texture_height:
+                top = max(origin+texture_height, visible.top())
+                painter.drawPixmap(QRectF(rect.left(), top, rect.width(), visible.bottom()-top),
+                                   image, QRectF(0, image.height()-1, image.width(), 1))
         painter.restore()
 
     def _draw_game_notes(self, painter, field, scale, widths, spacing, left, hit_y):
@@ -647,23 +670,48 @@ class ManiaPreview(QWidget):
                 continue
             index = note.lane
             x, width = positions[index], widths[index]
-            head_y = hit_y-(note.start_ms-self.t)*speed
+            raw_head_y = hit_y-(note.start_ms-self.t)*speed
+            head_y = raw_head_y
             if note.status == "holding":
-                head_y = hit_y
+                # Early holds keep falling until the head reaches the target.
+                head_y = min(head_y, hit_y)
             tail_y = hit_y-((note.end_ms or note.start_ms)-self.t)*speed
             if head_y < field.top()-width*2 or tail_y > field.bottom()+width*2:
                 continue
             head_sprite = self._assets.hold_heads[index] if note.is_hold else self._assets.notes[index]
             head = self._sprite_note_rect(head_sprite, x, width, head_y, scale, widths)
+            upside_down = self._bool(self._settings.get("upsidedown"))
             if note.is_hold:
                 tail_sprite = self._assets.hold_tails[index]
                 tail = self._sprite_note_rect(tail_sprite, x, width, tail_y, scale, widths)
-                body = QRectF(x, tail.center().y(), width, max(0, head.center().y()-tail.center().y()))
+                flip_tail = upside_down or self._assets.tail_flips[index]
+                if flip_tail:
+                    # A reversed tail uses the opposite anchor, not just a
+                    # mirrored texture inside the head's bottom-anchored box.
+                    tail.moveTop(tail_y)
+                # Legacy DrawableHoldNote uses duration - headHeight/2 +
+                # tailHeight/2 for the body, independently of the tail sprite's
+                # reversed anchor. Transparent tail pixels still count.
+                body_top = tail_y-tail.height()/2
+                body_bottom = raw_head_y-head.height()/2
+                body = QRectF(x, body_top, width, max(0, body_bottom-body_top))
+                painter.save()
+                # A held LN is clipped at the head instead of rescaling its
+                # whole texture every frame as the remaining duration shrinks.
+                painter.setClipRect(QRectF(x, field.top(), width,
+                                          max(0, head.center().y()-field.top())), Qt.IntersectClip)
+                painter.save()
+                if upside_down and not self._assets.body_flips[index]:
+                    painter.translate(0, body.top()+body.bottom())
+                    painter.scale(1, -1)
                 self._draw_hold_body(painter, self._assets.hold_bodies[index], body,
                                      self._assets.body_styles[index])
-                if not self._paint_sprite(painter, tail_sprite, tail, self.t, self._assets.tail_flips[index]):
+                painter.restore()
+                if not self._paint_sprite(painter, tail_sprite, tail, self.t, flip_tail):
                     painter.fillRect(tail.adjusted(3, 0, -3, 0), QColor("#b0f0ec"))
-            if not self._paint_sprite(painter, head_sprite, head, self.t):
+                painter.restore()
+            head_flags = self._assets.head_flips if note.is_hold else self._assets.note_flips
+            if not self._paint_sprite(painter, head_sprite, head, self.t, upside_down and not head_flags[index]):
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor("#70d7e0"))
                 painter.drawRoundedRect(head.adjusted(3, 0, -3, 0), 3, 3)
@@ -705,17 +753,87 @@ class ManiaPreview(QWidget):
         factor = getattr(self._assets, "hud_scale", .625)*scale
         return QRectF(center_x-width*factor/2, y-height*factor/2, width*factor, height*factor)
 
+    def _reset_hud_effects(self):
+        self._hud_holds = set()
+        self._hud_combo = 0
+        self._combo_pulse_at = None
+        self._combo_break = None
+        self._combo_colour_from = QColor("white")
+        self._combo_colour_target = QColor("white")
+        self._combo_colour_at = 0
+
+    def _combo_colour_at_time(self, time_ms):
+        # ColourHold's meaning is documented, but stable's exact transition
+        # curve is not public. This short linear transition is a tester-only
+        # approximation; the configured colour itself is used without changes.
+        progress = max(0, min(1, (time_ms-self._combo_colour_at)/120))
+        start, end = self._combo_colour_from.getRgb(), self._combo_colour_target.getRgb()
+        return QColor(*(round(a+(b-a)*progress) for a, b in zip(start, end)))
+
+    def _accept_hud_event(self, event):
+        note = next((note for note in self.game.notes if note.id == event.note_id), None)
+        had_hold = bool(self._hud_holds)
+        if event.hold_end or event.judgement == "0":
+            self._hud_holds.discard(event.note_id)
+        elif note is not None and note.is_hold:
+            self._hud_holds.add(event.note_id)
+        if had_hold != bool(self._hud_holds):
+            self._combo_colour_from = self._combo_colour_at_time(event.time_ms)
+            self._combo_colour_target = (QColor(self._assets.hold_colour) if self._hud_holds
+                                         else QColor("white"))
+            self._combo_colour_at = event.time_ms
+        if event.judgement == "0" and self._hud_combo > 0:
+            self._combo_break = (self._hud_combo, event.time_ms)
+        elif event.combo == self._hud_combo+1:
+            self._combo_pulse_at = event.time_ms
+        self._hud_combo = event.combo
+
+    @staticmethod
+    def _judgement_transform(kind, age):
+        """Stable-compatible scale/fade envelope used by ppy's legacy piece."""
+        if age < 0 or age >= 220:
+            return 0.0, 1.0, 0.0
+        if age < 20:
+            progress = age/20
+            alpha = 1-(1-progress)**2
+        elif age < 180:
+            alpha = 1.0
+        else:
+            alpha = 1-((age-180)/40)**2
+        if kind == "0":
+            # A fixed tilt keeps the test reproducible. Stable chooses a small
+            # random angle; its 1.2 -> 1 scale and duration are reproduced.
+            progress = min(1, age/100)
+            eased = 1-(1-progress)**2
+            return alpha, 1.2-.2*eased, 3*eased
+        if age < 40:
+            size = .8+.2*age/40
+        elif age < 80:
+            size = .85-.15*(age-40)/40
+        elif age < 180:
+            size = .7
+        else:
+            size = .7-.3*((age-180)/40)**2
+        return alpha, size, 0.0
+
     def _draw_judgement(self, painter, field, scale, left, total):
         if not self._last_judgement:
             return
         kind, when, manual = self._last_judgement
         age = self._effect_age(when, manual)
-        if not manual and age > 1100:
+        alpha, size, rotation = (1, 1, 0) if manual else self._judgement_transform(kind, age)
+        if alpha <= 0:
             return
         position = getattr(self._assets, "score_position", 300)
         y = (field.bottom()-position*scale if self._bool(self._settings.get("upsidedown"))
              else field.top()+position*scale)
         sprite = self._assets.judgements.get(kind)
+        painter.save()
+        painter.setOpacity(painter.opacity()*alpha)
+        painter.translate(left+total/2, y)
+        painter.scale(size, size)
+        painter.rotate(rotation)
+        painter.translate(-left-total/2, -y)
         if sprite:
             rect = self._hud_rect(sprite, left+total/2, y, scale, age, loop=manual)
             image = sprite.frame_at(age, loop=manual)
@@ -727,31 +845,76 @@ class ManiaPreview(QWidget):
             painter.setPen(QColor(colours[kind]))
             painter.drawText(QRectF(left-100*scale, y-24*scale, total+200*scale, 48*scale),
                              Qt.AlignCenter, labels[kind])
+        painter.restore()
 
     def _draw_combo(self, painter, field, scale, left, total):
         combo = self.game.combo if self.test_mode != "demo" else 0
-        if self._combo_inspect:
+        inspecting = self._combo_inspect is not None
+        if inspecting:
             combo = self._combo_inspect[0]
-        if combo <= 0:
-            return
         position = getattr(self._assets, "combo_position", 111)
         y = (field.bottom()-position*scale if self._bool(self._settings.get("upsidedown"))
              else field.top()+position*scale)
+        if self._combo_break and not inspecting:
+            previous, when = self._combo_break
+            progress = max(0, (self.t-when)/200)
+            if progress < 1:
+                painter.save()
+                painter.setCompositionMode(QPainter.CompositionMode_Plus)
+                painter.setOpacity(painter.opacity()*.8*(1-progress))
+                self._draw_combo_value(painter, previous, left+total/2, y, scale,
+                                       self._assets.break_colour, 1+3*progress, 1+3*progress)
+                painter.restore()
+        if combo <= 0:
+            return
+        pulse = 1
+        if not inspecting and self._combo_pulse_at is not None:
+            progress = max(0, min(1, (self.t-self._combo_pulse_at)/300))
+            pulse += .4*(1-progress)**2
+        colour = QColor("white") if inspecting else self._combo_colour_at_time(self.t)
+        self._draw_combo_value(painter, combo, left+total/2, y, scale, colour, 1, pulse)
+
+    @staticmethod
+    def _multiply_sprite(image, colour):
+        """Multiply RGB while retaining texture shading and source alpha.
+
+        Only a small temporary glyph is allocated; there is no per-frame cache
+        that could grow throughout a long preview session.
+        """
+        if colour.red() == colour.green() == colour.blue() == 255:
+            return image
+        from PIL import Image, ImageChops
+        source = image.toImage().convertToFormat(QImage.Format_RGBA8888)
+        rgba = Image.frombytes("RGBA", (source.width(), source.height()), bytes(source.constBits()))
+        overlay = Image.new("RGBA", rgba.size, (colour.red(), colour.green(), colour.blue(), 255))
+        tinted = ImageChops.multiply(rgba, overlay)
+        qt_image = QImage(tinted.tobytes(), tinted.width, tinted.height,
+                          tinted.width*4, QImage.Format_RGBA8888).copy()
+        return QPixmap.fromImage(qt_image)
+
+    def _draw_combo_value(self, painter, combo, center_x, y, scale, colour, stretch_x=1, stretch_y=1):
         digits = [self._assets.digits[int(value)] for value in str(combo)]
         factor = getattr(self._assets, "hud_scale", .625)*scale
+        painter.save()
+        painter.setOpacity(painter.opacity()*colour.alphaF())
+        painter.translate(center_x, y)
+        painter.scale(stretch_x, stretch_y)
+        painter.translate(-center_x, -y)
         if all(digits):
             sizes = [sprite.logical_size(self.t) for sprite in digits]
             overlap = self._assets.combo_overlap*factor
             width = sum(size[0]*factor for size in sizes)-overlap*(len(digits)-1)
-            x = left+(total-width)/2
+            x = center_x-width/2
             for sprite, (digit_width, digit_height) in zip(digits, sizes):
                 rect = QRectF(x, y-digit_height*factor/2, digit_width*factor, digit_height*factor)
-                self._paint_sprite(painter, sprite, rect, self.t)
+                image = self._multiply_sprite(sprite.frame_at(self.t), colour)
+                painter.drawPixmap(rect, image, QRectF(image.rect()))
                 x += digit_width*factor-overlap
         else:
             painter.setFont(QFont("Segoe UI", max(8, int(22*scale)), QFont.Bold))
-            painter.setPen(QColor("#f1f8ff"))
-            painter.drawText(QRectF(left-50, y-28*scale, total+100, 56*scale), Qt.AlignCenter, str(combo))
+            painter.setPen(QColor(colour.red(), colour.green(), colour.blue()))
+            painter.drawText(QRectF(center_x-200*scale, y-28*scale, 400*scale, 56*scale), Qt.AlignCenter, str(combo))
+        painter.restore()
 
     def _draw_comboburst(self, painter, field, scale, left, total):
         if not self._last_burst or not self._assets.combo_bursts:
@@ -812,6 +975,9 @@ class ManiaPreview(QWidget):
             p.translate(0, field.top()+field.bottom())
             p.scale(1, -1)
         lane_x = left
+        # Adjacent fractional lane edges must share full pixel coverage. AA
+        # creates hairline gaps revealing the blue editor behind a black stage.
+        p.setRenderHint(QPainter.Antialiasing, False)
         for i, width in enumerate(widths):
             lane = QRectF(lane_x, field.top(), width, field.height())
             p.fillRect(lane, self._lane_colours[i])
@@ -824,6 +990,7 @@ class ManiaPreview(QWidget):
         if line_width > 0:
             p.setPen(QPen(self._line_colour, line_width))
             p.drawLine(int(lane_x), int(field.top()), int(lane_x), int(field.bottom()))
+        p.setRenderHint(QPainter.Antialiasing, True)
         # The hit target is a background element, behind receptors and notes.
         if self._stage_hint is not None:
             p.drawPixmap(self._stage_hint_rect(left, total, hit_y, scale), self._stage_hint,

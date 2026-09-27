@@ -14,6 +14,11 @@
 
 ### Mania 素材与显示
 
+- 修复 `RepeatBottom` 错将超长长条主体底端对齐并裁切的问题，保留图片顶部的透明留白与圆角，按样式延展边缘像素
+- 分离反向尾图锚点与主体几何，透明尾图仍参与长度定位，长按时裁切主体而非随剩余长度重拉伸，提前命中后音符继续落到判定位置
+- 支持 `NoteBodyStyle` 名称与按列覆盖，补读 `ColourHold` / `ColourBreak`，加入连击纵向弹跳、断连颜色扩散与判定图缩放淡出
+- 增加超长圆角主体、边缘延展、透明尾、长按裁切和 HUD 色彩动画的像素回归测试
+
 - 按列读取普通音符、长条头身尾和按下 / 松开按键，使用 `NoteImage#`、`KeyImage#` 自定义路径及对应的默认列素材，避免各列只展示同一类音符
 - 读取六种自定义判定图，按 `ScorePosition` / `ComboPosition` 定位判定与连击，支持 `[Fonts]` 中的 `ComboPrefix` / `ComboOverlap`
 - 加入 StageLight、LightingN、LightingL 与连击图显示，连击图依据 `ComboBurstStyle` 放在轨道侧边

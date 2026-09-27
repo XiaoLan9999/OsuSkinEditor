@@ -17,13 +17,24 @@ import math
 from pathlib import Path, PureWindowsPath
 
 from PySide6.QtCore import QByteArray, QBuffer, QIODevice
-from PySide6.QtGui import QImageReader, QPixmap
+from PySide6.QtGui import QColor, QImageReader, QPixmap
 
 
 MAX_ANIMATION_FRAMES = 256
 MAX_IMAGE_PIXELS = 24_000_000
 MAX_IMAGE_BYTES = 32 * 1024 * 1024
 MAX_DECODED_BYTES = 192 * 1024 * 1024
+
+# The named legacy enumeration is not the wiki's shortened 0/1/2 table.
+# ppy/osu's LegacyManiaSkinDecoder parses these names/numbers directly. Keep
+# the old Repeat value (1) for skins which deliberately tile the entire image.
+NOTE_BODY_STYLES = {
+    "stretch": 0,
+    "repeat": 1,
+    "repeattop": 2,
+    "repeatbottom": 3,
+    "repeattopandbottom": 4,
+}
 
 
 def _number(value, default, low=None, high=None):
@@ -44,6 +55,39 @@ def _bool(value, default=False):
     if value is None or not str(value).strip():
         return default
     return str(value).strip().casefold() in ("1", "true", "yes", "on")
+
+
+def _direction_flag(value, default):
+    """Invalid/empty optional overrides keep the inherited direction flag."""
+    word = str(value).strip().casefold()
+    if word in ("1", "true", "yes", "on"):
+        return True
+    if word in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+def note_body_style(value, default=3):
+    """Return a legacy body-style value without truncating malformed numbers."""
+    word = str(value).strip().casefold()
+    if word in NOTE_BODY_STYLES:
+        return NOTE_BODY_STYLES[word]
+    number = _number(value, None)
+    if number is not None and number.is_integer() and 0 <= number <= 4:
+        return int(number)
+    return default
+
+
+def _colour(value, default):
+    try:
+        channels = [int(part.strip()) for part in str(value).split(",")]
+        if len(channels) == 3:
+            channels.append(255)
+        if len(channels) != 4 or any(not 0 <= channel <= 255 for channel in channels):
+            raise ValueError
+        return QColor(*channels)
+    except (ValueError, TypeError):
+        return QColor(*default)
 
 
 def _folded(values):
@@ -162,6 +206,8 @@ class ManiaSkinAssets:
         self.combo_position = _number(self.settings.get("comboposition"), 111, 0, 480)
         self.combo_overlap = _number(fonts.get("combooverlap"), 0, -256, 256)
         self.combo_prefix = str(fonts.get("comboprefix") or "score").strip()
+        self.hold_colour = _colour(self.settings.get("colourhold"), (255, 191, 51, 255))
+        self.break_colour = _colour(self.settings.get("colourbreak"), (255, 0, 0, 255))
         self.column_suffixes = default_column_suffixes(
             self.keys, self.settings.get("specialstyle", 0),
             _bool(self.settings.get("splitstages")))
@@ -173,8 +219,30 @@ class ManiaSkinAssets:
         self.keys_up = []
         self.keys_down = []
         self.body_styles = []
+        # Flags describe permission to flip with an element's effective
+        # direction, not an unconditional image transform. Notes/heads/bodies
+        # and keys face up only during upscroll; a hold tail faces the inverse
+        # direction, so its default image flip occurs during downscroll.
+        # Geometry anchors must be handled separately by the renderer.
+        self.note_flips = []
+        self.head_flips = []
+        self.body_flips = []
+        self.key_flips = []
+        self.key_down_flips = []
         self.tail_flips = []
         default_style = 3 if self.version >= 2.5 else 0
+        global_style = note_body_style(self.settings.get("notebodystyle"), default_style)
+        modern_flips = self.version >= 2.5
+        note_flip = _direction_flag(self.settings.get("noteflipwhenupsidedown"), modern_flips)
+        key_flip = _direction_flag(self.settings.get("keyflipwhenupsidedown"), modern_flips)
+
+        def flip(prefix, column, suffix, inherited):
+            # The optional suffix-wide forms (notably ...T) appear in the
+            # official Mania image documentation, while the INI reference
+            # lists the global and column-specific forms.
+            part_default = _direction_flag(self.settings.get(prefix + suffix), inherited)
+            return _direction_flag(self.settings.get(f"{prefix}{column}{suffix}"), part_default)
+
         for i, suffix in enumerate(self.column_suffixes):
             note = self._configured(f"noteimage{i}", f"mania-note{suffix}")
             head = self._configured(f"noteimage{i}h", f"mania-note{suffix}H") or note
@@ -188,11 +256,13 @@ class ManiaSkinAssets:
             self.hold_tails.append(tail)
             self.keys_up.append(up)
             self.keys_down.append(down)
-            style = self.settings.get(f"notebodystyle{i}", self.settings.get("notebodystyle"))
-            self.body_styles.append(int(_number(style, default_style, 0, 4)))
-            flip = self.settings.get(f"noteflipwhenupsidedown{i}t",
-                                     self.settings.get("noteflipwhenupsidedownt"))
-            self.tail_flips.append(_bool(flip, self.version >= 2.5))
+            self.body_styles.append(note_body_style(self.settings.get(f"notebodystyle{i}"), global_style))
+            self.note_flips.append(flip("noteflipwhenupsidedown", i, "", note_flip))
+            self.head_flips.append(flip("noteflipwhenupsidedown", i, "h", note_flip))
+            self.body_flips.append(flip("noteflipwhenupsidedown", i, "l", note_flip))
+            self.tail_flips.append(flip("noteflipwhenupsidedown", i, "t", note_flip))
+            self.key_flips.append(flip("keyflipwhenupsidedown", i, "", key_flip))
+            self.key_down_flips.append(flip("keyflipwhenupsidedown", i, "d", key_flip))
 
         self.judgements = {kind: self._configured(f"hit{kind}", f"mania-hit{kind}")
                            for kind in ("300g", "300", "200", "100", "50", "0")}

@@ -10,7 +10,7 @@ from unittest.mock import patch
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 
-from ui.preview.mania_skin_assets import ManiaSkinAssets, default_column_suffixes
+from ui.preview.mania_skin_assets import ManiaSkinAssets, default_column_suffixes, note_body_style
 
 
 APP = QApplication.instance() or QApplication([])
@@ -221,6 +221,79 @@ class ManiaSkinAssetTests(unittest.TestCase):
         old = ManiaSkinAssets(self.root)
         self.assertEqual(old.body_styles, [0] * 4)
         self.assertEqual(old.tail_flips, [False] * 4)
+
+    def test_named_body_styles_match_legacy_numeric_values(self):
+        for name, value in (("Stretch", 0), ("Repeat", 1), ("RepeatTop", 2),
+                            ("RepeatBottom", 3), ("RepeatTopAndBottom", 4)):
+            with self.subTest(name=name):
+                self.assertEqual(note_body_style(name), value)
+                self.assertEqual(note_body_style(name.swapcase()), value)
+                self.assertEqual(note_body_style(str(value)), value)
+                self.assertEqual(note_body_style(f" {value}.0 "), value)
+
+    def test_invalid_body_style_does_not_silently_clamp_or_truncate(self):
+        for value in (None, "", "nonsense", "1.7", "-1", "5", "nan", "inf"):
+            with self.subTest(value=value):
+                self.assertEqual(note_body_style(value, 2), 2)
+
+    def test_per_column_named_styles_override_global_and_invalid_values_inherit(self):
+        settings = {"NoteBodyStyle": "RepeatTop", "NoteBodyStyle0": "Stretch",
+                    "NoteBodyStyle1": "RepeatBottom", "NoteBodyStyle2": "garbage"}
+        assets = ManiaSkinAssets(self.root, settings, {"General": {"Version": "2.7"}})
+        self.assertEqual(assets.body_styles, [0, 3, 2, 2])
+
+    def test_all_direction_flags_have_version_appropriate_defaults(self):
+        for version, default in (("2.4", False), ("2.5", True), ("latest", True)):
+            with self.subTest(version=version):
+                assets = ManiaSkinAssets(self.root, config={"General": {"Version": version}})
+                for name in ("note_flips", "head_flips", "body_flips", "tail_flips",
+                             "key_flips", "key_down_flips"):
+                    self.assertEqual(getattr(assets, name), [default] * 4)
+
+    def test_note_direction_flags_apply_global_part_and_exact_column_precedence(self):
+        settings = {"NoteFlipWhenUpsideDown": "0", "NoteFlipWhenUpsideDown0": "1",
+                    "NoteFlipWhenUpsideDown1H": "1", "NoteFlipWhenUpsideDown2L": "1",
+                    "NoteFlipWhenUpsideDownT": "1", "NoteFlipWhenUpsideDown3T": "0"}
+        assets = ManiaSkinAssets(self.root, settings, {"General": {"Version": "2.7"}})
+        self.assertEqual(assets.note_flips, [True, False, False, False])
+        self.assertEqual(assets.head_flips, [False, True, False, False])
+        self.assertEqual(assets.body_flips, [False, False, True, False])
+        self.assertEqual(assets.tail_flips, [True, True, True, False])
+        self.assertEqual(assets.key_flips, [True] * 4)
+
+    def test_key_up_and_down_flags_are_independent_and_inherit_global(self):
+        settings = {"KeyFlipWhenUpsideDown": "0", "KeyFlipWhenUpsideDown0": "1",
+                    "KeyFlipWhenUpsideDown1D": "1", "KeyFlipWhenUpsideDown2D": "bad"}
+        assets = ManiaSkinAssets(self.root, settings, {"General": {"Version": "2.7"}})
+        self.assertEqual(assets.key_flips, [True, False, False, False])
+        self.assertEqual(assets.key_down_flips, [False, True, False, False])
+        self.assertEqual(assets.note_flips, [True] * 4)
+
+    def test_invalid_direction_override_preserves_inherited_value(self):
+        settings = {"NoteFlipWhenUpsideDown": "1", "NoteFlipWhenUpsideDown0H": "invalid",
+                    "NoteFlipWhenUpsideDown1T": "", "KeyFlipWhenUpsideDown1": "?"}
+        assets = ManiaSkinAssets(self.root, settings, {"General": {"Version": "2.7"}})
+        self.assertTrue(assets.head_flips[0])
+        self.assertTrue(assets.tail_flips[1])
+        self.assertTrue(assets.key_flips[1])
+
+    def test_direction_metadata_is_independent_of_current_scroll_direction(self):
+        # The tail has an effective direction opposite to notes. Callers apply
+        # its flag in downscroll, and apply ordinary flags in upscroll.
+        down = ManiaSkinAssets(self.root, {"UpsideDown": "0"}, {"General": {"Version": "2.7"}})
+        up = ManiaSkinAssets(self.root, {"UpsideDown": "1"}, {"General": {"Version": "2.7"}})
+        self.assertEqual(down.note_flips, up.note_flips)
+        self.assertEqual(down.tail_flips, up.tail_flips)
+
+    def test_hold_and_break_colours_preserve_rgba_and_default_gold_red(self):
+        assets = ManiaSkinAssets(self.root, {"ColourHold": "246,171,172,210", "ColourBreak": "12,34,56"})
+        self.assertEqual(assets.hold_colour.getRgb(), (246, 171, 172, 210))
+        self.assertEqual(assets.break_colour.getRgb(), (12, 34, 56, 255))
+        for value in (None, "", "red", "256,0,0", "1,2,3,4,5", "1.5,2,3"):
+            with self.subTest(value=value):
+                defaults = ManiaSkinAssets(self.root, {"ColourHold": value, "ColourBreak": value})
+                self.assertEqual(defaults.hold_colour.getRgb(), (255, 191, 51, 255))
+                self.assertEqual(defaults.break_colour.getRgb(), (255, 0, 0, 255))
 
     def test_default_layouts_cover_one_to_eighteen_keys_and_split_stages(self):
         for keys in range(1, 19):
