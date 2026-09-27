@@ -8,11 +8,13 @@
 
 Windows 版下载后直接运行，无需安装 Python
 
-**当前 `main` 包含尚未发布的新功能**：Mania 键盘试玩与舞台侧图、Standard 自动测试、判定与连击素材检查，以及独立预览窗口，这些功能不在上面的 v1.5 程序中，可按文末说明从当前源码运行
+**[下载 v1.6.0-preview.5 开发预览](https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.5/OsuSkinEditor-v1.6.0-preview.5-windows-x64.exe)** · [开发预览发布说明](https://github.com/XiaoLan9999/OsuSkinEditor/releases/tag/v1.6.0-preview.5)
 
-当前源码版本为 **1.6.0-preview.5 / preview-r5，构建号 5**，新增在线公告与程序更新功能，以上版本标识不表示该构建已经发布
+**开发预览包含** Mania 键盘试玩与舞台侧图、Standard 自动测试、判定与连击素材检查，以及独立预览窗口，这些功能不在旧版 v1.5 程序中
 
-从 **v1.5 或预览 r1–r4** 升级时，需要在新版发布后首次手动下载并运行新的 Windows 程序，这些旧版没有程序更新入口，无法通过公告远程强制安装新版
+当前开发预览为 **1.6.0-preview.5 / preview-r5，构建号 5**，包含在线公告与程序更新功能
+
+从 **v1.5 或预览 r1–r4** 升级时，请首次手动下载并运行上面的开发预览，之后可通过程序内的更新入口升级
 
 <details>
 <summary>查看内置更新公告</summary>
@@ -43,7 +45,7 @@ Windows 版下载后直接运行，无需安装 Python
 
 构建与发布维护步骤见 [更新发布说明](docs/UPDATES.md)
 
-## Unreleased · Mania 皮肤测试场景
+## Mania 皮肤测试场景
 
 新测试场景使用当前皮肤和内置排列，方便查看每一列的音符、长条头身尾、按键按下效果、判定图与连击图
 
