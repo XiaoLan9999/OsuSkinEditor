@@ -4,8 +4,9 @@ import re
 from datetime import date
 from pathlib import Path
 from core.resources import resource_path
+from core.app_version import BUILD_ID
 
-CURRENT_BUILD_ID = "preview-r4"
+CURRENT_BUILD_ID = BUILD_ID
 SEEN_KEY = "updates/seen_ids"
 AUTO_SHOW_KEY = "updates/show_on_start"
 CHANGELOG_URL = "https://github.com/XiaoLan9999/OsuSkinEditor/blob/main/CHANGELOG.md"
@@ -38,8 +39,19 @@ def load_announcements(path=None):
     try:
         if source.stat().st_size > 1024*1024:
             return ()
-        data = json.loads(source.read_text(encoding="utf-8-sig"))
+        raw = source.read_bytes()
     except (OSError, ValueError, UnicodeError):
+        return ()
+    return parse_announcements(raw)
+
+
+def parse_announcements(raw):
+    """Validate a bounded local or remote catalog without rendering HTML."""
+    try:
+        if not isinstance(raw, bytes) or len(raw) > 1024*1024:
+            return ()
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (ValueError, UnicodeError):
         return ()
     if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("entries"), list):
         return ()

@@ -1,9 +1,9 @@
 """Offline, non-modal update history styled like the skin workspace."""
 from html import escape
-from PySide6.QtCore import Qt, QSize, QSignalBlocker, QUrl
+from PySide6.QtCore import Qt, QSize, QSignalBlocker, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget,
-                              QListWidgetItem, QTextBrowser, QCheckBox, QPushButton)
+                              QListWidgetItem, QTextBrowser, QCheckBox, QPushButton, QTabBar)
 from core import i18n
 from core.update_announcements import (CURRENT_BUILD_ID, AUTO_SHOW_KEY, CHANGELOG_URL,
                                        load_announcements, localized, localized_items)
@@ -16,11 +16,17 @@ def version_label(entry):
 
 
 class UpdateAnnouncementsDialog(QDialog):
+    refresh_requested = Signal(bool)
+    software_update_requested = Signal()
+
     def __init__(self, settings, entries=None, parent=None, current_id=CURRENT_BUILD_ID):
         super().__init__(parent)
         self.setModal(False)
         self.settings = settings
         self.entries = load_announcements() if entries is None else tuple(entries)
+        self.local_entries = self.entries
+        self.online_entries = None
+        self._online_status = "announcements.online_idle"
         self.current_id = current_id
         self.viewed_ids = set()
         self.resize(860, 600)
@@ -41,6 +47,22 @@ class UpdateAnnouncementsDialog(QDialog):
         self.subtitle.setObjectName("Muted")
         self.subtitle.setWordWrap(True)
         layout.addWidget(self.subtitle)
+        source_row = QHBoxLayout()
+        self.source_tabs = QTabBar()
+        self.source_tabs.addTab("")
+        self.source_tabs.addTab("")
+        self.source_tabs.currentChanged.connect(self._source_changed)
+        self.refresh_button = QPushButton()
+        self.refresh_button.clicked.connect(lambda: self.refresh_requested.emit(True))
+        source_row.addWidget(self.source_tabs)
+        source_row.addStretch()
+        source_row.addWidget(self.refresh_button)
+        layout.addLayout(source_row)
+        self.online_status = QLabel()
+        self.online_status.setObjectName("Muted")
+        self.online_status.setWordWrap(True)
+        self.online_status.setTextFormat(Qt.PlainText)
+        layout.addWidget(self.online_status)
         history = QHBoxLayout()
         history.setSpacing(18)
         self.version_list = QListWidget()
@@ -69,6 +91,9 @@ class UpdateAnnouncementsDialog(QDialog):
         self.close_button.clicked.connect(self.accept)
         self.close_button.setDefault(True)
         buttons.addWidget(self.project_button)
+        self.update_button = QPushButton()
+        self.update_button.clicked.connect(self.software_update_requested)
+        buttons.addWidget(self.update_button)
         buttons.addStretch()
         buttons.addWidget(self.close_button)
         layout.addLayout(buttons)
@@ -82,13 +107,20 @@ class UpdateAnnouncementsDialog(QDialog):
         self.setWindowTitle(i18n.t("announcements.title", "更新公告"))
         self.heading.setText(i18n.t("announcements.title", "更新公告"))
         self.subtitle.setText(i18n.t("announcements.subtitle", "随程序提供的版本记录，离线也能查看"))
-        current = next((entry for entry in self.entries if entry["id"] == self.current_id), None)
+        current = next((entry for entry in self.local_entries if entry["id"] == self.current_id), None)
         label = version_label(current) if current else self.current_id
         self.build_label.setText(i18n.t("announcements.current_build", "当前构建：{version}").format(version=label))
         self.show_on_start.setText(i18n.t("announcements.show_on_start", "启动时显示新公告"))
         self.project_button.setText(i18n.t("announcements.full_history", "项目更新记录"))
         self.project_button.setToolTip(CHANGELOG_URL)
         self.close_button.setText(i18n.t("announcements.close", "知道了"))
+        self.source_tabs.setTabText(0, i18n.t("announcements.local"))
+        self.source_tabs.setTabText(1, i18n.t("announcements.online"))
+        self.refresh_button.setText(i18n.t("announcements.refresh"))
+        self.refresh_button.setVisible(self.source_tabs.currentIndex() == 1)
+        self.online_status.setVisible(self.source_tabs.currentIndex() == 1)
+        self.online_status.setText(i18n.t(self._online_status))
+        self.update_button.setText(i18n.t("updater.check"))
         self.version_list.setAccessibleName(i18n.t("announcements.history", "版本历史"))
         self.body.setAccessibleName(i18n.t("announcements.contents", "公告内容"))
         row = 0
@@ -131,3 +163,28 @@ class UpdateAnnouncementsDialog(QDialog):
         item = self.version_list.currentItem()
         if item is not None:
             self.viewed_ids.add(item.data(Qt.UserRole))
+
+    def _source_changed(self, index):
+        self.entries = self.local_entries if index == 0 else (self.online_entries or ())
+        self.retranslate()
+        if index == 1:
+            self.refresh_requested.emit(False)
+
+    def set_online_entries(self, entries, cached=False):
+        self.online_entries = tuple(entries)
+        self._online_status = "announcements.online_cached" if cached else "announcements.online_loaded"
+        if self.source_tabs.currentIndex() == 1:
+            self.entries = self.online_entries
+        self.retranslate()
+
+    def set_online_error(self, message):
+        self.online_entries = None
+        self._online_status = "announcements.online_failed"
+        if self.source_tabs.currentIndex() == 1:
+            self.entries = ()
+            self.retranslate()
+            self.body.setPlainText(i18n.t(self._online_status)+"\n"+message)
+
+    def set_online_loading(self):
+        self._online_status = "announcements.online_loading"
+        self.online_status.setText(i18n.t(self._online_status))

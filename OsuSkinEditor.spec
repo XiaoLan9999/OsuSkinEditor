@@ -17,6 +17,10 @@ from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
 datas = [('locales', 'locales'), ('i18n_patch', 'i18n_patch'), ('ico', 'ico'), ('assets', 'assets')]
+updater_binary = Path(os.environ.get('OSUSKIN_UPDATER_PATH', 'dist/updater/OsuSkinUpdater.exe')).resolve()
+if not updater_binary.is_file():
+    raise SystemExit('Build OsuSkinUpdater.spec first, or set OSUSKIN_UPDATER_PATH to the helper EXE')
+datas.append((str(updater_binary), 'assets/updater'))
 hiddenimports = ['PySide6.QtMultimedia']
 datas += collect_data_files('PIL')
 hiddenimports += collect_submodules('PIL')

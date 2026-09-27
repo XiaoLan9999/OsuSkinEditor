@@ -10,7 +10,9 @@ Windows 版下载后直接运行，无需安装 Python
 
 **当前 `main` 包含尚未发布的新功能**：Mania 键盘试玩与舞台侧图、Standard 自动测试、判定与连击素材检查，以及独立预览窗口，这些功能不在上面的 v1.5 程序中，可按文末说明从当前源码运行
 
-当前开发预览还新增「关于」→「更新公告」，可离线查看程序内置的中英双语版本历史，并区分正式版与开发预览，新公告在该版本首次启动时显示一次，关闭后记住已读状态，也可取消「启动时显示新公告」并继续从菜单手动查看
+当前源码版本为 **1.6.0-preview.5 / preview-r5，构建号 5**，新增在线公告与程序更新功能，以上版本标识不表示该构建已经发布
+
+从 **v1.5 或预览 r1–r4** 升级时，需要在新版发布后首次手动下载并运行新的 Windows 程序，这些旧版没有程序更新入口，无法通过公告远程强制安装新版
 
 <details>
 <summary>查看内置更新公告</summary>
@@ -18,6 +20,28 @@ Windows 版下载后直接运行，无需安装 Python
 ![内置更新公告](docs/images/updates.png)
 
 </details>
+
+## 在线公告与程序更新
+
+「关于」→「更新公告」将**当前版本说明**与**在线公告历史**分开显示，当前 r5 说明随程序打包，离线仍可阅读，历史公告从项目仓库获取，网络不可用时保留本地说明与可用缓存
+
+新公告首次显示后记住已读状态，可取消「启动时显示新公告」，之后仍能从菜单手动查看
+
+安装支持更新的新版后，可在「关于」→「检查程序更新」选择正式版或开发预览通道，依次执行「检查程序更新」「下载新版」「重启并更新」，当前源码默认使用开发预览通道
+
+下载前验证更新清单的 **Ed25519 签名**，下载后验证文件大小与 **SHA-256**，校验通过后才允许替换当前 Windows EXE，更新助手会在程序同目录保留旧版备份，新程序启动失败时尝试恢复旧版，皮肤文件与编辑器设置不参与替换
+
+可以关闭「启动后自动检查公告和程序更新」，手动检查入口仍可使用，自动检查不会自行安装更新
+
+从源码运行时可以检查和下载新版，但不会覆盖 Python 解释器或源码目录，原位置替换仅适用于 Windows 打包程序
+
+![程序更新窗口](docs/images/software-update.png)
+
+*界面示例中的后续版本号不表示已经发布，只有实际下载校验完成后才会启用重启更新*
+
+公告来自仓库的 [announcements.json](https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/announcements.json)，签名更新清单来自 [manifest.json](https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/manifest.json)，当前没有使用 GitHub Pages
+
+构建与发布维护步骤见 [更新发布说明](docs/UPDATES.md)
 
 ## Unreleased · Mania 皮肤测试场景
 
@@ -197,9 +221,9 @@ v1.5 已通过 **137 项自动化回归测试**，并使用 Capoo 1.5 与 Bochi 
 
 ## 从源码运行
 
-内置公告保存在 `assets/updates.json`，发布新构建时追加唯一公告 ID 并更新 `core/update_announcements.py` 中的 `CURRENT_BUILD_ID`，公告随程序打包，不联网拉取内容或安装更新
+`assets/updates.json` 仅保存当前构建的离线说明，在线历史位于 `updates/announcements.json`，构建身份统一维护在 `core/app_version.py`，更新清单的公钥位于 `core/update_public_key.py`
 
-需要 Python 3.10 或更新版本，界面使用 PySide6，图像处理使用 Pillow
+需要 Python 3.10 或更新版本，界面使用 PySide6，图像处理使用 Pillow，更新签名校验使用 cryptography
 
 ```powershell
 py -m venv .venv
@@ -217,10 +241,13 @@ py -m venv .venv
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install pyinstaller
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --distpath dist/updater OsuSkinUpdater.spec
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean OsuSkinEditor.spec
 ```
 
 构建结果位于 `dist/OsuSkinEditor.exe`
+
+请先构建更新助手，主程序会将 `dist/updater/OsuSkinUpdater.exe` 一起打包，如果助手位于其他位置，可设置 `OSUSKIN_UPDATER_PATH` 指向该 EXE 后再构建主程序
 
 `requirements-lock.txt` 记录本次 Windows 构建使用的依赖版本，复现构建环境可使用 Python 3.13，并将安装依赖的命令改为 `pip install -r requirements-lock.txt`
 
@@ -230,4 +257,4 @@ py -m venv .venv
 
 遇到问题可以[提交 Issue](https://github.com/XiaoLan9999/OsuSkinEditor/issues)，请附上程序版本、皮肤名称、键数、复现步骤，以及编辑器与游戏内的对照截图
 
-[更新记录](CHANGELOG.md) · [osu! skin.ini 说明](https://osu.ppy.sh/wiki/en/Skinning/skin.ini) · [Mania 素材说明](https://osu.ppy.sh/wiki/en/Skinning/osu%21mania) · [头像素材说明](assets/branding/README.md)
+[更新记录](CHANGELOG.md) · [更新发布维护](docs/UPDATES.md) · [osu! skin.ini 说明](https://osu.ppy.sh/wiki/en/Skinning/skin.ini) · [Mania 素材说明](https://osu.ppy.sh/wiki/en/Skinning/osu%21mania) · [头像素材说明](assets/branding/README.md)

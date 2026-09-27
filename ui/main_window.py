@@ -24,7 +24,12 @@ from ui.std_preview_controls import StdPreviewControls
 from ui.detached_preview import DetachedPreviewWindow
 from ui.update_announcements import UpdateAnnouncementsDialog
 from core.update_announcements import (load_announcements, should_show_announcement,
-                                       mark_announcements_seen)
+                                       mark_announcements_seen, seen_announcements)
+from core.app_version import CHANNEL
+from core.update_service import UpdateService
+from core.update_launch import installed_executable, read_record
+from ui.software_update import SoftwareUpdateDialog
+from ui.update_install_controller import UpdateInstallController
 from ui.widgets.wheel_guard import ClickWheelComboBox
 from ui.widgets.asset_inspector import AssetInspector
 from ui.widgets.identity import AvatarBadge, TechPanel, WelcomeCanvas
@@ -76,6 +81,28 @@ class MainWindow(QMainWindow):
         self._update_dialog = None
         self._announcement_entries = load_announcements()
         self._closing = False
+        self._online_announcements = ()
+        self._pending_online_notice = None
+        self._software_update_dialog = None
+        self.available_release = None
+        self._preparing_update = False
+        self._update_exit_authorized = False
+        self._quit_after_cancel = False
+        self.update_service = UpdateService(self)
+        self.update_service.announcements_ready.connect(self._online_notes_ready)
+        self.update_service.update_ready.connect(self._updates_checked)
+        self.update_service.failed.connect(self._online_update_failed)
+        self._network_check_timer = QTimer(self)
+        self._network_check_timer.setSingleShot(True)
+        self._network_check_timer.timeout.connect(self._background_online_check)
+        self._install_controller = UpdateInstallController(self)
+        self._install_controller.ready_to_exit.connect(self._commit_update_restart)
+        self._install_controller.failed.connect(self._update_install_failed)
+        self._install_controller.cancelled.connect(self._update_install_cancelled)
+        self._update_result_timer = QTimer(self)
+        self._update_result_timer.setSingleShot(True)
+        self._update_result_timer.timeout.connect(self._read_update_result)
+        self._result_checks = 0
         self._update_notice_timer = QTimer(self)
         self._update_notice_timer.setSingleShot(True)
         self._update_notice_timer.timeout.connect(self._maybe_show_update_announcement)
@@ -103,6 +130,7 @@ class MainWindow(QMainWindow):
         # 作者信息动作
         self.act_about_author = QAction(self)
         self.act_update_announcements = QAction(self)
+        self.act_check_updates = QAction(self)
         self.act_assets_images = QAction(self)
         self.act_assets_audio = QAction(self)
 
@@ -136,6 +164,7 @@ class MainWindow(QMainWindow):
         self.act_link_blog.triggered.connect(lambda: QDesktopServices.openUrl(QUrl('https://blog.xiaolan9999.net/')))
         self.act_about_author.triggered.connect(self._show_author_info_dialog)
         self.act_update_announcements.triggered.connect(self._show_update_announcements)
+        self.act_check_updates.triggered.connect(self._show_software_update)
         self.act_assets_images.triggered.connect(lambda: self._open_assets_manager('image'))
         self.act_assets_audio.triggered.connect(lambda: self._open_assets_manager('audio'))
 
@@ -171,6 +200,7 @@ class MainWindow(QMainWindow):
         self.center_group.addAction(self.act_center_image); self.center_group.addAction(self.act_center_alpha)
         self.author_menu.addAction(self.act_about_author)
         self.author_menu.addAction(self.act_update_announcements)
+        self.author_menu.addAction(self.act_check_updates)
         self.assets_menu.addAction(self.act_assets_images)
         self.assets_menu.addAction(self.act_assets_audio)
 
@@ -881,14 +911,26 @@ class MainWindow(QMainWindow):
             self.resize(1280, 800)
 
     def closeEvent(self, event):
-        if not self.mania_ini_dock._confirm_discard_if_dirty():
-            event.ignore()
-            return
-        if not self._confirm_design_navigation():
+        if not self._update_exit_authorized:
+            if not self.mania_ini_dock._confirm_discard_if_dirty():
+                event.ignore()
+                return
+            if not self._confirm_design_navigation():
+                event.ignore()
+                return
+        if not self._install_controller.close():
+            self._quit_after_cancel = True
+            self.statusBar().showMessage(i18n.t("updater.wait_cancel"))
             event.ignore()
             return
         self._closing = True
         self._update_notice_timer.stop()
+        self._network_check_timer.stop()
+        self._update_result_timer.stop()
+        self.update_service.close()
+        if self._software_update_dialog is not None:
+            self._software_update_dialog.committed = self._update_exit_authorized
+            self._software_update_dialog.close()
         if self._update_dialog is not None:
             self._update_dialog.close()
         self._restore_preview()
@@ -932,12 +974,18 @@ class MainWindow(QMainWindow):
         """Called by the application entrypoint after the main window is shown."""
         if not self._closing:
             self._update_notice_timer.start(250)
+            if self.settings.value("updates/auto_check", True, bool):
+                self._network_check_timer.start(2500)
+            self._update_result_timer.start(500)
 
     def _maybe_show_update_announcement(self):
         self._update_notice_timer.stop()
         if self._closing or not self.isVisible():
             return
-        if not should_show_announcement(self.settings, self._announcement_entries):
+        online = self._pending_online_notice
+        wants_online = bool(online and self.settings.value("updates/show_on_start", True, bool)
+                            and online not in seen_announcements(self.settings))
+        if not wants_online and not should_show_announcement(self.settings, self._announcement_entries):
             return
         if self._update_dialog is not None and self._update_dialog.isVisible():
             return
@@ -948,6 +996,13 @@ class MainWindow(QMainWindow):
             self._update_notice_timer.start(1000)
             return
         self._show_update_announcements()
+        if wants_online:
+            self._update_dialog.source_tabs.setCurrentIndex(1)
+            for row, entry in enumerate(self._update_dialog.entries):
+                if entry["id"] == online:
+                    self._update_dialog.version_list.setCurrentRow(row)
+                    break
+            self._pending_online_notice = None
 
     def _show_update_announcements(self):
         if self._closing:
@@ -956,6 +1011,11 @@ class MainWindow(QMainWindow):
             dialog = UpdateAnnouncementsDialog(self.settings, self._announcement_entries, self)
             self._update_dialog = dialog
             dialog.finished.connect(lambda result, viewer=dialog: self._finish_update_announcements(viewer))
+            dialog.refresh_requested.connect(self._refresh_online_notes)
+            dialog.software_update_requested.connect(self._show_software_update)
+            if self._online_announcements:
+                dialog.set_online_entries(self._online_announcements,
+                    self.update_service.last_result_from_cache["announcements"])
         self._update_dialog.show()
         self._update_dialog.raise_()
         self._update_dialog.activateWindow()
@@ -965,6 +1025,149 @@ class MainWindow(QMainWindow):
         if self._update_dialog is dialog:
             self._update_dialog = None
         dialog.deleteLater()
+
+    def _background_online_check(self):
+        if self._closing or not self.settings.value("updates/auto_check", True, bool):
+            return
+        self.update_service.check_announcements()
+        channel = self.settings.value("updates/channel", CHANNEL, str)
+        self.update_service.check_updates(channel if channel in ("stable", "preview") else CHANNEL)
+
+    def _refresh_online_notes(self, force=False):
+        if self._update_dialog:
+            self._update_dialog.set_online_loading()
+        self.update_service.check_announcements(force=force)
+
+    def _online_notes_ready(self, entries):
+        if self._closing:
+            return
+        self._online_announcements = tuple(entries)
+        if self._update_dialog:
+            self._update_dialog.set_online_entries(entries,
+                self.update_service.last_result_from_cache["announcements"])
+        elif entries:
+            channel = self.settings.value("updates/channel", CHANNEL, str)
+            candidates = entries if channel == "preview" else [entry for entry in entries if entry["channel"] in ("stable", "release")]
+            if not candidates:
+                return
+            latest = candidates[0]
+            local_date = max((entry["date"] for entry in self._announcement_entries), default="")
+            if latest["date"] >= local_date and latest["id"] not in seen_announcements(self.settings):
+                self._pending_online_notice = latest["id"]
+                self._update_notice_timer.start(250)
+
+    def _updates_checked(self, release):
+        if self._closing:
+            return
+        self.available_release = release
+        self.act_check_updates.setText(i18n.t("updater.menu_available" if release else "updater.check"))
+        if release:
+            self.statusBar().showMessage(i18n.t("updater.found").format(version=release["version"]), 12000)
+
+    def _online_update_failed(self, category, message):
+        if category == "announcements" and self._update_dialog:
+            self._update_dialog.set_online_error(message)
+
+    def _show_software_update(self):
+        if self._closing:
+            return
+        if self._software_update_dialog is None:
+            dialog = SoftwareUpdateDialog(self.update_service, self.settings, self)
+            self._software_update_dialog = dialog
+            dialog.install_requested.connect(self._request_update_install)
+            dialog.cancel_install_requested.connect(self._cancel_update_install)
+            dialog.finished.connect(lambda _, viewer=dialog: self._finish_software_update(viewer))
+            if self.available_release and not self.update_service.ready_path:
+                dialog._checked(self.available_release)
+        self._software_update_dialog.show()
+        self._software_update_dialog.raise_()
+        self._software_update_dialog.activateWindow()
+        if not self._preparing_update:
+            self._software_update_dialog.check()
+
+    def _finish_software_update(self, dialog):
+        if self._software_update_dialog is dialog:
+            self._software_update_dialog = None
+        dialog.deleteLater()
+
+    def _set_update_preparing(self, active):
+        self._preparing_update = active
+        for widget in (self.centralWidget(), self.menuBar(), self.mania_ini_dock,
+                       self.mania_design_dock, self.debug_dock):
+            widget.setEnabled(not active)
+        if self._preview_window:
+            self._preview_window.setEnabled(not active)
+        if self._software_update_dialog:
+            self._software_update_dialog.set_preparing(active)
+
+    def _request_update_install(self):
+        if self._closing or self._preparing_update:
+            return
+        payload, release = self.update_service.ready_path, self.update_service.ready_release
+        if not payload or not release or installed_executable() is None:
+            return
+        if not self.mania_ini_dock._confirm_discard_if_dirty() or not self._confirm_design_navigation():
+            return
+        self.std_preview.set_playing(False)
+        self.mania_preview.set_playing(False)
+        self.btn_pause.setChecked(True)
+        if self._install_controller.start(payload, release):
+            self._set_update_preparing(True)
+
+    def _cancel_update_install(self):
+        if not self._update_exit_authorized:
+            self._install_controller.cancel()
+
+    def _update_install_failed(self, message):
+        if self._closing:
+            return
+        self._set_update_preparing(False)
+        if self._software_update_dialog:
+            self._software_update_dialog.set_preparing(False, message)
+        self.statusBar().showMessage(i18n.t("updater.install_failed"), 10000)
+
+    def _update_install_cancelled(self):
+        if self._closing:
+            return
+        self._set_update_preparing(False)
+        if self._quit_after_cancel:
+            self._quit_after_cancel = False
+            self.close()
+
+    def _commit_update_restart(self, prepared):
+        if self._closing or not self._preparing_update:
+            self._install_controller.cancel()
+            return
+        self.settings.setValue("updates/pending_job", prepared["job_path"])
+        self.settings.sync()
+        self._install_controller.commit()
+        self._update_exit_authorized = True
+        if self.close():
+            QApplication.instance().quit()
+        else:
+            self._update_exit_authorized = False
+            self._install_controller.cancel()
+            self._set_update_preparing(False)
+
+    def _read_update_result(self):
+        job_path = self.settings.value("updates/pending_job", "", str)
+        if self._closing or not job_path:
+            return
+        job = read_record(job_path)
+        result = read_record(job.get("result_file", "")) if job else None
+        if result and result.get("nonce") == job.get("nonce"):
+            self.settings.remove("updates/pending_job")
+            if result.get("status") == "success":
+                self.statusBar().showMessage(i18n.t("updater.completed"), 15000)
+            else:
+                self._show_software_update()
+                details = result.get("message", "")
+                if result.get("status") == "rollback_failed":
+                    details += "\n"+i18n.t("updater.manual_restore").format(path=result.get("backup_exe", ""))
+                self._software_update_dialog.set_preparing(False, details)
+        elif self._result_checks < 60:
+            self._result_checks += 1
+            self._update_result_timer.start(1000)
 
     def _show_author_info_dialog(self):
             # ---------- xiaolan ----------
@@ -1003,6 +1206,9 @@ class MainWindow(QMainWindow):
         self.author_menu.setTitle(i18n.t("menu.author", "作者"))
         self.act_about_author.setText(i18n.t("action.about_author", "作者信息…"))
         self.act_update_announcements.setText(i18n.t("announcements.menu", "更新公告…"))
+        self.act_check_updates.setText(i18n.t("updater.menu_available" if self.available_release else "updater.check"))
+        if self._software_update_dialog:
+            self._software_update_dialog.retranslate()
         if self._update_dialog is not None:
             self._update_dialog.retranslate()
         self.assets_menu.setTitle(i18n.t('menu.assets', '皮肤文件小工具'))
