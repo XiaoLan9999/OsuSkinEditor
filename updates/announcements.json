@@ -2,6 +2,40 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "preview-r6",
+      "version": "1.6.0-preview.6",
+      "date": "2026-09-28",
+      "channel": "preview",
+      "title": {
+        "zh-CN": "在线更新下载兼容修复",
+        "en-US": "Update download compatibility fix"
+      },
+      "summary": {
+        "zh-CN": "开发预览：保留 GitHub 下载跳转地址的完整编码，避免将合法更新下载误判为无效地址",
+        "en-US": "Development preview: preserve the exact encoding of GitHub download redirects so valid updates are accepted"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "下载与升级",
+            "en-US": "Downloads and upgrades"
+          },
+          "items": {
+            "zh-CN": [
+              "修复 Qt 显示格式解码下载地址后触发安全检查的问题，继续验证 HTTPS、目标域名、发布签名和文件哈希",
+              "保留在线公告、下载进度、取消、重启替换与旧程序备份恢复流程",
+              "v1.5 与预览 r1–r5 用户请先从 Release 手动下载此版，之后可使用程序内更新"
+            ],
+            "en-US": [
+              "Fix a redirect encoding issue while retaining HTTPS, host, signature and file-integrity checks",
+              "Keep online announcements, progress, cancellation, restart replacement and backup recovery",
+              "Users of v1.5 and previews r1–r5 should download this build from Releases once, then use in-app updates"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "preview-r5",
       "version": "1.6.0-preview.5",
       "date": "2026-09-28",
