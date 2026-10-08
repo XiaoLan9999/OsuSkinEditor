@@ -2,15 +2,17 @@
 
 本文说明当前更新机制及发布顺序，不表示文中的示例版本已经发布
 
-当前源码身份为 `VERSION = "1.6.0-preview.6"`、`BUILD_ID = "preview-r6"`、`BUILD_NUMBER = 6`、`CHANNEL = "preview"`，已发布 v1.5 的链接保留在 README
+当前源码身份为 `VERSION = "1.6.0-preview.7"`、`BUILD_ID = "preview-r7"`、`BUILD_NUMBER = 7`、`CHANNEL = "preview"`，已发布 v1.5 的链接保留在 README
 
 ## 用户如何更新
 
-v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并运行一次 v1.6.0-preview.6 或更新的 Windows EXE，公告不能给旧版远程安装更新功能
+v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并运行一次 v1.6.0-preview.7 或更新的 Windows EXE，公告不能给旧版远程安装更新功能
 
 预览 r5 已有更新入口，但下载跳转编码存在兼容问题，也需要手动升级到 r6 一次
 
 之后使用「关于」→「检查程序更新」选择通道、检查、下载并重启更新，后台自动检查可以关闭，检查到新版本不会自行安装
+
+连接方式默认「自动选择」，可在更新窗口固定为 GitHub 直连、GHFast 或 GH-Proxy，选择保存在 `updates/source_mode`，在检查、下载或安装准备期间不可切换，当前线路文本显示实际获得有效内容的域名
 
 「启动时显示新公告」控制公告是否自动弹出，「启动后自动检查公告和程序更新」控制后台联网检查，两项设置独立，关闭后仍可从菜单手动操作
 
@@ -21,13 +23,13 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 | 文件或地址 | 用途 |
 | --- | --- |
 | `core/app_version.py` | 当前版本、公告 ID、构建号、默认通道与平台 |
-| `assets/updates.json` | 随程序打包的当前构建离线说明，当前仅包含 r6 |
+| `assets/updates.json` | 随程序打包的当前构建离线说明，当前仅包含 r7 |
 | `updates/announcements.json` | 完整中英双语公告历史，最新记录排在前面 |
 | `updates/manifest.json` | 经过 Ed25519 签名的稳定版和预览版更新指针 |
 | `core/update_public_key.py` | 程序内置的 Ed25519 公钥，可提交到源码仓库 |
 | `tools/publish_update.py` | 本地生成并验证签名清单，不上传任何文件 |
 
-客户端固定读取以下 HTTPS 地址，当前没有使用 GitHub Pages
+客户端的原始数据地址固定为以下 HTTPS 地址，当前没有使用 GitHub Pages
 
 - [在线公告历史](https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/announcements.json)
 - [签名更新清单](https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/manifest.json)
@@ -38,11 +40,33 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 
 下载地址必须属于本项目的 `https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/<tag>/<exe>`，更新包大小不超过 512 MiB，客户端验证实际文件大小和 SHA-256 后才将下载结果交给更新流程
 
+## 多线路检测与缓存
+
+默认自动模式同时检测以下三个传输来源，GH-Proxy 的网站域名与其文档给出的资源代理前缀不同
+
+| 连接方式 | 元数据与下载传输 | 服务说明 |
+| --- | --- | --- |
+| GitHub 直连 | 原始 GitHub / Raw 地址 | 本项目仓库与 Release |
+| GHFast | `https://ghfast.top/<完整原始 HTTPS URL>` | [GHFast 网站](https://ghfast.top/) |
+| GH-Proxy | `https://gh-proxy.org/<完整原始 HTTPS URL>` | [官方快速上手](https://gh-proxy.com/docs/quick-start) |
+
+检测请求使用实际公告和签名清单，不以 DNS、TCP、首页或 HTTP 状态成功作为内容有效的依据，公告需要通过格式检查，程序更新清单需要通过内置公钥验签，HTML 错误页、损坏内容和伪造签名不能提供安装授权
+
+收到首个有效响应后，客户端保留一个短暂收集窗口，再从有效响应中选择最新签名信息，超时、网络失败或验证失败的线路不阻断已经通过验证的结果，固定模式只使用用户选定的线路
+
+缓存记录保留内容来源，ETag 与来源绑定，不能把 GitHub 返回的 ETag 发送给加速线路，也不能用另一线路的 304 响应给旧缓存续期，所有缓存清单再次读取时都要验签，断网时保留可用缓存和当前版本的离线说明
+
+自动下载按照近期成功来源优先尝试，失败时回退到其他允许的线路，切换后清除本次未完成的文件、重新计算 SHA-256 并从头下载，进度也从 0 开始，不跨域拼接断点数据
+
+签名清单的 `url` 始终保留原始 GitHub Release 地址，客户端只在传输层构造固定允许的加速地址，不接受公告或镜像返回的任意下载站，HTTPS、重定向范围、发布签名、文件大小和 SHA-256 检查始终生效
+
+以上公共加速服务由第三方运营，本项目不承诺持续可用或特定地区速度，维护者后续可加入自己控制的国内 HTTPS 镜像，镜像只复制原始已签名清单与最终 EXE，不持有签名私钥，不能单独授权另一个更新包
+
 ## 构建号与公告 ID
 
 `BUILD_NUMBER` 是全渠道统一的递增序号，每次发布都应大于正式版和开发预览中所有已经发布的构建号，不能在切换通道后重新从 1 开始，也不能只递增版本字符串
 
-例如当前预览构建号为 6，下一个正式版如果希望当前预览用户能够升级，必须使用大于 6 的构建号，客户端不会因为版本标签看起来更高而安装相同或更低的构建号
+例如当前预览构建号为 7，下一个正式版如果希望当前预览用户能够升级，必须使用大于 7 的构建号，客户端不会因为版本标签看起来更高而安装相同或更低的构建号
 
 合并旧清单时，发布工具会比较两个通道的最大构建号，拒绝相同或更低的构建号，维护者还需确保源码中的构建身份与最终 EXE 一致
 
@@ -86,18 +110,18 @@ py -m venv .venv
 
 不要先发布指向尚未上传文件的新清单，也不要手动修改已经签名的 Base64 载荷，发布工具本身不执行上传或 Git 操作
 
-下面以首次发布当前 r6 构建为例，示例不会展示或创建私钥，版本和构建号必须改成实际待发布构建的值
+下面以发布当前 r7 构建为例，示例不会展示或创建私钥，版本和构建号必须改成实际待发布构建的值
 
 ```powershell
 $signingKey = Join-Path $env:LOCALAPPDATA 'OsuSkinEditor\Publisher\update-signing-key.pem'
-$releaseExe = 'work\release\OsuSkinEditor-v1.6.0-preview.6-windows-x64.exe'
+$releaseExe = 'work\release\OsuSkinEditor-v1.6.0-preview.7-windows-x64.exe'
 $manifestArgs = @(
     '--exe', $releaseExe,
-    '--version', '1.6.0-preview.6',
-    '--build-id', 'preview-r6',
-    '--build-number', '6',
+    '--version', '1.6.0-preview.7',
+    '--build-id', 'preview-r7',
+    '--build-number', '7',
     '--channel', 'preview',
-    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.6/OsuSkinEditor-v1.6.0-preview.6-windows-x64.exe',
+    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.7/OsuSkinEditor-v1.6.0-preview.7-windows-x64.exe',
     '--private-key', $signingKey,
     '--output', 'updates\manifest.json'
 )

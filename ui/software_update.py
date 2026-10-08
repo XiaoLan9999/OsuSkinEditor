@@ -19,7 +19,7 @@ class SoftwareUpdateDialog(QDialog):
         self.release = None
         self.preparing = False
         self.committed = False
-        self.resize(620, 410)
+        self.resize(620, 490)
         self.setMinimumWidth(510)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 20)
@@ -45,6 +45,28 @@ class SoftwareUpdateDialog(QDialog):
         row.addStretch()
         row.addWidget(self.check_button)
         layout.addLayout(row)
+        source_row = QHBoxLayout()
+        self.source_label = QLabel()
+        self.source_mode = ClickWheelComboBox()
+        for value in ("auto", "github", "ghfast", "ghproxy"):
+            self.source_mode.addItem(value, value)
+        saved_source = settings.value("updates/source_mode", "auto", str)
+        saved_source = saved_source if self.source_mode.findData(saved_source) >= 0 else "auto"
+        if service.set_source_mode(saved_source):
+            settings.setValue("updates/source_mode", saved_source)
+        self.source_mode.setCurrentIndex(max(0, self.source_mode.findData(service.source_mode)))
+        self.source_mode.currentIndexChanged.connect(self._source_mode_changed)
+        source_row.addWidget(self.source_label)
+        source_row.addWidget(self.source_mode)
+        source_row.addStretch()
+        layout.addLayout(source_row)
+        self.current_source = QLabel()
+        self.current_source.setObjectName("Muted")
+        self.current_source.setTextFormat(Qt.PlainText)
+        self.current_source.setWordWrap(True)
+        self._source_kind = None
+        self._source_domain = None
+        layout.addWidget(self.current_source)
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.PlainText)
@@ -86,8 +108,13 @@ class SoftwareUpdateDialog(QDialog):
         service.download_progress.connect(self._progress)
         service.download_ready.connect(self._downloaded)
         service.state_changed.connect(self._state_changed)
+        service.source_changed.connect(self._source_changed)
         self._status_key = "updater.idle"
         self.retranslate()
+        for kind in ("download", "updates", "announcements"):
+            if service.last_source.get(kind):
+                self._source_changed(kind, service.last_source[kind])
+                break
         if service.ready_path:
             self._downloaded(service.ready_path, service.ready_release)
         self._controls()
@@ -99,6 +126,10 @@ class SoftwareUpdateDialog(QDialog):
         self.channel_label.setText(i18n.t("updater.channel"))
         for index, key in enumerate(("stable", "preview")):
             self.channel.setItemText(index, i18n.t("updater."+key))
+        self.source_label.setText(i18n.t("updater.connection"))
+        for index, key in enumerate(("auto", "github", "ghfast", "ghproxy")):
+            self.source_mode.setItemText(index, i18n.t("updater.connection_"+key))
+        self._render_source()
         self.check_button.setText(i18n.t("updater.check"))
         self.download_button.setText(i18n.t("updater.download"))
         self.install_button.setText(i18n.t("updater.install"))
@@ -113,6 +144,35 @@ class SoftwareUpdateDialog(QDialog):
         self.release = None
         self.release_info.clear()
         self.check()
+
+    def _source_mode_changed(self):
+        mode = self.source_mode.currentData()
+        if not self.service.set_source_mode(mode):
+            self.source_mode.blockSignals(True)
+            self.source_mode.setCurrentIndex(max(0, self.source_mode.findData(self.service.source_mode)))
+            self.source_mode.blockSignals(False)
+            return
+        self.settings.setValue("updates/source_mode", mode)
+        self._source_kind = self._source_domain = None
+        self._render_source()
+        self.release = None
+        self.release_info.clear()
+        self.check()
+
+    def _source_changed(self, kind, domain):
+        if kind not in ("updates", "download", "announcements"):
+            return
+        if kind == "announcements" and self._source_kind in ("updates", "download"):
+            return
+        self._source_kind, self._source_domain = kind, domain
+        self._render_source()
+
+    def _render_source(self):
+        if self._source_domain:
+            kind = i18n.t("updater.route_"+self._source_kind)
+            self.current_source.setText(i18n.t("updater.current_route").format(kind=kind, domain=self._source_domain))
+        else:
+            self.current_source.setText(i18n.t("updater.route_pending"))
 
     def check(self):
         if self.preparing or self.service.downloading or self.service.ready_path:
@@ -165,6 +225,7 @@ class SoftwareUpdateDialog(QDialog):
         busy = self.preparing or self.service.downloading or self.service.state == "checking"
         ready = bool(self.service.ready_path)
         self.channel.setEnabled(not busy and not ready)
+        self.source_mode.setEnabled(not busy and not ready)
         self.check_button.setEnabled(not busy and not ready)
         self.download_button.setEnabled(self.release is not None and not ready and not busy)
         self.install_button.setEnabled(ready and self.can_install and not busy)

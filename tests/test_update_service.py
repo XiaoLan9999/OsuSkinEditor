@@ -115,7 +115,7 @@ class UpdateServiceTests(unittest.TestCase):
         self.public = self.private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
         self.network = FakeNetwork()
         self.service = UpdateService(cache_dir=self.root, network_manager=self.network,
-                                     current_build_number=5, public_key=self.public)
+                                     current_build_number=5, public_key=self.public, source_mode="github")
         self.errors, self.updates, self.announcements, self.ready, self.progress, self.states = [], [], [], [], [], []
         self.service.failed.connect(lambda category, message: self.errors.append((category, message)))
         self.service.update_ready.connect(self.updates.append)
@@ -421,7 +421,7 @@ class UpdateServiceTests(unittest.TestCase):
         self.assertTrue(reply.aborted)
         self.assertTrue(unrelated.exists())
         self.assertFalse(list(self.root.rglob("*.download")))
-        with patch("core.update_service.DOWNLOAD_IDLE_TIMEOUT_MS", 10):
+        with patch("core.update_service.DOWNLOAD_CONNECT_TIMEOUT_MS", 10):
             self.service.download_release(self.release)
             QTest.qWait(30)
         self.assertTrue(self.network.latest.aborted)
@@ -431,6 +431,271 @@ class UpdateServiceTests(unittest.TestCase):
         self.assertTrue(self.network.latest.aborted)
         self.assertTrue(unrelated.exists())
         self.assertFalse(self.service.check_announcements())
+
+    def test_auto_checks_real_metadata_in_parallel_and_chooses_newest_verified_release(self):
+        self.service.set_source_mode("auto")
+        self.service.check_updates("preview")
+        self.assertEqual(len(self.network.requests), 3)
+        self.service.check_updates("preview", force=True)
+        self.assertEqual(len(self.network.requests), 3)
+        newest = dict(self.release, build_number=7, version="1.6.0-preview.7")
+        self.network.replies[1].respond(self.signed())
+        self.assertFalse(self.updates)
+        self.network.replies[0].respond(self.signed(newest))
+        self.network.replies[2].respond(b"<html>Unavailable</html>")
+        self.assertEqual(self.updates, [newest])
+        self.assertFalse(self.errors)
+        self.assertEqual(self.service.last_source["updates"], "raw.githubusercontent.com")
+
+    def test_metadata_settle_deadline_aborts_slow_sources_and_delivers_once(self):
+        self.service.set_source_mode("auto")
+        with patch("core.update_service.METADATA_SETTLE_MS", 10):
+            self.service.check_updates("preview")
+            replies = list(self.network.replies)
+            replies[1].respond(self.signed())
+            QTest.qWait(40)
+        self.assertEqual(self.updates, [self.release])
+        self.assertTrue(replies[0].aborted)
+        self.assertTrue(replies[2].aborted)
+        self.assertEqual(self.updates, [self.release])
+        self.assertFalse(self.errors)
+        self.assertEqual(self.service.last_source["updates"], "ghfast.top")
+
+    def test_original_unavailable_mirror_valid_signature_succeeds(self):
+        self.service.set_source_mode("auto")
+        self.service.check_updates("preview")
+        replies = list(self.network.replies)
+        replies[0].respond(status=503)
+        replies[1].sslErrors.emit(["bad certificate"])
+        replies[2].respond(self.signed())
+        self.assertEqual(self.updates, [self.release])
+        self.assertFalse(self.errors)
+        self.assertEqual(self.service.last_source["updates"], "gh-proxy.org")
+
+    def test_all_sources_timeout_emit_one_failure_without_authorization(self):
+        self.service.set_source_mode("auto")
+        with patch("core.update_service.METADATA_TIMEOUT_MS", 10):
+            self.service.check_updates("preview")
+            QTest.qWait(40)
+        self.assertEqual(len(self.errors), 1)
+        self.assertFalse(self.updates)
+        self.assertTrue(all(reply.aborted for reply in self.network.replies))
+        self.assertEqual(self.service.state, "idle")
+
+    def test_etag_is_bound_to_exact_source_and_unconditional_304_cannot_use_cache(self):
+        self.authorize()
+        self.service.set_source_mode("auto")
+        self.service.check_updates("preview", force=True)
+        requests, replies = self.network.requests[-3:], self.network.replies[-3:]
+        self.assertEqual(bytes(requests[0].rawHeader("If-None-Match")), b'"one"')
+        self.assertFalse(bytes(requests[1].rawHeader("If-None-Match")))
+        self.assertFalse(bytes(requests[2].rawHeader("If-None-Match")))
+        replies[0].respond(status=503)
+        replies[1].respond(status=304)
+        replies[2].respond(self.signed(), headers={"ETag": '"proxy"'})
+        cache = json.loads((self.root/"updates.json").read_text())
+        self.assertTrue(cache["source_url"].startswith("https://gh-proxy.org/"))
+        self.assertEqual(cache["etag"], '"proxy"')
+        self.assertEqual(len(self.updates), 2)
+        self.assertFalse(self.errors)
+
+    def test_legacy_cache_without_source_never_sends_etag(self):
+        self.authorize()
+        cache_path = self.root/"updates.json"
+        cache = json.loads(cache_path.read_text())
+        del cache["source_url"]
+        cache_path.write_text(json.dumps(cache))
+        self.service.check_updates("preview", force=True)
+        self.assertFalse(bytes(self.network.requests[-1].rawHeader("If-None-Match")))
+        self.network.latest.respond(status=304)
+        self.assertEqual(len(self.updates), 1)
+        self.assertEqual(len(self.errors), 1)
+
+    def test_redirected_metadata_etag_belongs_to_final_response_url_only(self):
+        self.service.set_source_mode("ghfast")
+        self.service.check_updates("preview", force=True)
+        mirror_request = self.network.requests[-1]
+        self.assertTrue(mirror_request.url().toString().startswith("https://ghfast.top/"))
+        self.assertFalse(bytes(mirror_request.rawHeader("If-None-Match")))
+        self.network.latest.respond(status=302, redirect=MANIFEST_URL)
+        self.assertEqual(self.network.requests[-1].url().toString(), MANIFEST_URL)
+        self.network.latest.respond(self.signed(), headers={"ETag": '"final-origin"'})
+        cache = json.loads((self.root/"updates.json").read_text())
+        self.assertEqual(cache["source_url"], MANIFEST_URL)
+        self.assertEqual(cache["etag"], '"final-origin"')
+
+        self.service.set_source_mode("auto")
+        self.service.check_updates("preview", force=True)
+        requests, replies = self.network.requests[-3:], self.network.replies[-3:]
+        self.assertEqual(bytes(requests[0].rawHeader("If-None-Match")), b'"final-origin"')
+        self.assertFalse(bytes(requests[1].rawHeader("If-None-Match")))
+        self.assertFalse(bytes(requests[2].rawHeader("If-None-Match")))
+        replies[0].respond(status=304)
+        replies[1].respond(status=503)
+        replies[2].respond(status=503)
+        self.assertEqual(self.updates, [self.release, self.release])
+        self.assertFalse(self.errors)
+
+    def test_stale_mirror_cannot_replace_newer_verified_cache(self):
+        self.authorize()
+        cache_path = self.root/"updates.json"
+        before = cache_path.read_bytes()
+        older = dict(self.release, build_number=4, version="1.6.0-preview.4")
+        self.service.set_source_mode("ghfast")
+        self.service.check_updates("preview", force=True)
+        self.network.latest.respond(self.signed(older))
+        self.assertEqual(self.updates[-1], self.release)
+        self.assertTrue(self.service.last_result_from_cache["updates"])
+        self.assertEqual(cache_path.read_bytes(), before)
+
+    def test_download_retry_resets_partial_progress_hash_and_ignores_old_callbacks(self):
+        self.authorize()
+        self.service.set_source_mode("auto")
+        self.service.download_release(self.release)
+        old = self.network.latest
+        old.begin(200)
+        old.push(self.body[:100])
+        old.finish(QNetworkReply.RemoteHostClosedError)
+        current = self.network.latest
+        self.assertIsNot(old, current)
+        self.assertTrue(old.aborted)
+        self.assertEqual(self.progress[-1], (0, len(self.body)))
+        self.assertEqual(self.service.state, "downloading")
+        old.sslErrors.emit(["late error"])
+        old.finished.emit()
+        current.respond(self.body)
+        self.assertEqual(len(self.ready), 1)
+        self.assertEqual(Path(self.ready[0][0]).read_bytes(), self.body)
+        self.assertEqual(self.ready[0][1], self.release)
+        self.assertFalse(self.errors)
+
+    def test_hash_mismatch_and_wrong_size_try_next_source_without_preparing(self):
+        self.authorize()
+        self.service.set_source_mode("auto")
+        self.service.download_release(self.release)
+        self.network.latest.respond(b"X"+self.body[1:])
+        self.assertFalse(self.ready)
+        self.network.latest.begin(200, {"Content-Length": 1})
+        self.assertFalse(self.ready)
+        self.network.latest.respond(self.body)
+        self.assertEqual(len(self.ready), 1)
+        self.assertEqual(Path(self.ready[0][0]).read_bytes(), self.body)
+        self.assertFalse(self.errors)
+
+    def test_cancel_and_close_after_retry_never_start_another_source(self):
+        self.authorize()
+        self.service.set_source_mode("auto")
+        self.service.download_release(self.release)
+        self.network.latest.respond(status=503)
+        current = self.network.latest
+        count = len(self.network.requests)
+        self.service.cancel_download()
+        current.sslErrors.emit(["late error"])
+        current.finished.emit()
+        QTest.qWait(10)
+        self.assertEqual(len(self.network.requests), count)
+        self.assertFalse(list(self.root.rglob("*.download")))
+        self.service.check_updates("preview", force=True)
+        pending = self.network.replies[-3:]
+        count = len(self.network.requests)
+        self.service.close()
+        self.assertTrue(all(reply.aborted for reply in pending))
+        QTest.qWait(10)
+        self.assertEqual(len(self.network.requests), count)
+        self.assertFalse(self.errors)
+
+    def test_disk_error_in_auto_mode_is_terminal_without_network_retry(self):
+        self.authorize()
+        self.service.set_source_mode("auto")
+        self.service.download_release(self.release)
+        transfer = self.service._operations["download"]
+        original = transfer.stream
+        class BrokenDisk:
+            def write(self, data):
+                raise OSError("Disk full")
+            def close(self):
+                original.close()
+        transfer.stream = BrokenDisk()
+        count = len(self.network.requests)
+        self.network.latest.respond(self.body)
+        self.assertEqual(len(self.network.requests), count)
+        self.assertEqual(len(self.errors), 1)
+        self.assertFalse(self.service.downloading)
+
+    def test_first_byte_timeout_retries_and_successful_source_is_remembered(self):
+        self.authorize()
+        self.service.set_source_mode("auto")
+        with patch("core.update_service.DOWNLOAD_CONNECT_TIMEOUT_MS", 10):
+            self.service.download_release(self.release)
+            old = self.network.latest
+            self.service._operations["download"].timer.timeout.emit()
+            current = self.network.latest
+            self.assertIsNot(old, current)
+            current.respond(self.body)
+        self.assertEqual(len(self.ready), 1)
+        preferred = self.service.last_source["download"]
+        self.service.discard_ready()
+        self.service.download_release(self.release)
+        self.assertEqual(self.network.requests[-1].url().host(), preferred)
+        self.service.cancel_download()
+
+    def test_source_mode_changes_are_refused_while_checking_or_downloading(self):
+        self.assertFalse(self.service.set_source_mode("unknown"))
+        self.service.check_updates("preview")
+        self.assertFalse(self.service.set_source_mode("ghfast"))
+        self.network.latest.respond(self.signed())
+        self.assertTrue(self.service.set_source_mode("ghfast"))
+        self.service.download_release(self.release)
+        self.assertTrue(self.network.requests[-1].url().toString().startswith("https://ghfast.top/"))
+        self.assertFalse(self.service.set_source_mode("auto"))
+        self.service.cancel_download()
+
+    def test_synchronous_close_on_checking_state_never_starts_requests(self):
+        self.service.set_source_mode("auto")
+        self.service.state_changed.connect(lambda state: self.service.close() if state == "checking" else None)
+        self.service.check_updates("preview")
+        self.assertFalse(self.network.requests)
+        self.assertFalse(self.service._operations)
+        self.assertEqual(self.service.state, "idle")
+        self.assertFalse(self.errors)
+
+    def test_synchronous_cancel_on_download_source_never_starts_requests(self):
+        self.authorize()
+        self.service.set_source_mode("auto")
+        self.service.source_changed.connect(lambda kind, _host: self.service.cancel_download()
+                                            if kind == "download" else None)
+        requests = len(self.network.requests)
+        self.assertFalse(self.service.download_release(self.release))
+        self.assertEqual(len(self.network.requests), requests)
+        self.assertFalse(self.service.downloading)
+        self.assertFalse(list(self.root.rglob("*.download")))
+        self.assertFalse(self.errors)
+
+    def test_redirect_pending_old_read_does_not_block_new_reply_streaming(self):
+        self.body = b"MZ" + b"A"*(2*1024*1024)
+        self.release["size"] = len(self.body)
+        self.release["sha256"] = hashlib.sha256(self.body).hexdigest()
+        old = self.start_download()
+        old.begin(302, redirect="https://release-assets.githubusercontent.com/asset?sig=test")
+        old.push(b"R"*(400*1024))
+        self.assertTrue(self.service._operations["download"].read_queued)
+        # Finishing drains the remainder and redirects while old.resume is
+        # still pending. The new reply needs an independent queued-read flag.
+        old.finish()
+        current = self.network.latest
+        self.assertIsNot(old, current)
+        current.begin(200)
+        current.push(self.body)
+        self.assertFalse(self.ready)
+        QTest.qWait(40)
+        self.assertEqual(self.progress[-1], (len(self.body), len(self.body)))
+        self.assertFalse(self.service._operations["download"].read_queued)
+        # Assert streaming completed before finished can provide its separate
+        # drain loop; otherwise that loop would hide the queue contamination.
+        current.finish()
+        self.assertEqual(len(self.ready), 1)
+        self.assertEqual(Path(self.ready[0][0]).read_bytes(), self.body)
+        self.assertFalse(self.errors)
 
 
 if __name__ == "__main__":

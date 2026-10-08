@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
         self._update_exit_authorized = False
         self._quit_after_cancel = False
         self.update_service = UpdateService(self)
+        self._apply_update_source_mode()
         self.update_service.announcements_ready.connect(self._online_notes_ready)
         self.update_service.update_ready.connect(self._updates_checked)
         self.update_service.failed.connect(self._online_update_failed)
@@ -1026,14 +1027,22 @@ class MainWindow(QMainWindow):
             self._update_dialog = None
         dialog.deleteLater()
 
+    def _apply_update_source_mode(self):
+        mode = self.settings.value("updates/source_mode", "auto", str)
+        mode = mode if mode in ("auto", "github", "ghfast", "ghproxy") else "auto"
+        if self.update_service.set_source_mode(mode):
+            self.settings.setValue("updates/source_mode", mode)
+
     def _background_online_check(self):
         if self._closing or not self.settings.value("updates/auto_check", True, bool):
             return
+        self._apply_update_source_mode()
         self.update_service.check_announcements()
         channel = self.settings.value("updates/channel", CHANNEL, str)
         self.update_service.check_updates(channel if channel in ("stable", "preview") else CHANNEL)
 
     def _refresh_online_notes(self, force=False):
+        self._apply_update_source_mode()
         if self._update_dialog:
             self._update_dialog.set_online_loading()
         self.update_service.check_announcements(force=force)

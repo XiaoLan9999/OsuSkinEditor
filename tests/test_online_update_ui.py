@@ -37,6 +37,7 @@ class FakeUpdateService(QObject):
     download_progress = Signal(int, int)
     download_ready = Signal(str, object)
     state_changed = Signal(str)
+    source_changed = Signal(str, str)
 
     def __init__(self, parent=None, **_kwargs):
         super().__init__(parent)
@@ -45,11 +46,23 @@ class FakeUpdateService(QObject):
         self.downloading = False
         self.state = "idle"
         self.last_result_from_cache = {"announcements": False, "updates": False}
+        self.source_mode = "auto"
+        self.last_source = {}
+        self.source_modes = []
         self.checks, self.downloads = [], []
         self.cancelled_downloads = 0
         self.discarded = 0
         self.closed = False
         self.announcement_checks = []
+
+    def set_source_mode(self, mode):
+        if mode not in ("auto", "github", "ghfast", "ghproxy"):
+            return False
+        if self.downloading or self.state == "checking":
+            return mode == self.source_mode
+        self.source_mode = mode
+        self.source_modes.append(mode)
+        return True
 
     def check_announcements(self, force=False):
         self.announcement_checks.append(force)
@@ -155,12 +168,14 @@ class SoftwareUpdateDialogTests(unittest.TestCase):
         dialog.check_button.click()
         self.assertEqual(self.service.checks, [("preview", True)])
         self.assertFalse(dialog.channel.isEnabled())
+        self.assertFalse(dialog.source_mode.isEnabled())
         self.service.checked(RELEASE)
         self.assertTrue(dialog.download_button.isEnabled())
         self.assertIn(RELEASE["version"], dialog.release_info.text())
         dialog.download_button.click()
         self.assertEqual(self.service.downloads, [RELEASE])
         self.assertFalse(dialog.check_button.isEnabled())
+        self.assertFalse(dialog.source_mode.isEnabled())
         self.service.download_progress.emit(512*1024, 1024*1024)
         self.assertEqual(dialog.progress.value(), 50)
         self.service.downloaded(self.root / "payload.exe")
@@ -223,6 +238,7 @@ class SoftwareUpdateDialogTests(unittest.TestCase):
         dialog.set_preparing(True)
         self.assertFalse(dialog.install_button.isEnabled())
         self.assertFalse(dialog.channel.isEnabled())
+        self.assertFalse(dialog.source_mode.isEnabled())
         dialog.cancel_button.click()
         self.assertEqual(cancelled, [True])
         self.assertEqual(self.service.discarded, 0)
@@ -238,6 +254,52 @@ class SoftwareUpdateDialogTests(unittest.TestCase):
         self.assertFalse(self.settings.value("updates/auto_check", True, bool))
         dialog.retranslate()
         self.assertEqual(dialog.release, RELEASE)
+
+    def test_connection_preference_restores_and_changes_trigger_fresh_check(self):
+        self.settings.setValue("updates/source_mode", "ghfast")
+        dialog = self.dialog()
+        self.assertEqual(dialog.source_mode.currentData(), "ghfast")
+        self.assertEqual(self.service.source_mode, "ghfast")
+        self.service.checked(RELEASE)
+        dialog.source_mode.setCurrentIndex(dialog.source_mode.findData("ghproxy"))
+        self.assertEqual(self.settings.value("updates/source_mode", "", str), "ghproxy")
+        self.assertEqual(self.service.source_mode, "ghproxy")
+        self.assertEqual(self.service.checks, [("preview", True)])
+        self.assertIsNone(dialog.release)
+        self.assertFalse(dialog.source_mode.isEnabled())
+
+    def test_invalid_connection_preference_returns_to_auto(self):
+        self.settings.setValue("updates/source_mode", "unknown-mirror")
+        dialog = self.dialog()
+        self.assertEqual(dialog.source_mode.currentData(), "auto")
+        self.assertEqual(self.settings.value("updates/source_mode", "", str), "auto")
+
+    def test_current_route_updates_on_fallback_and_stays_plain_across_language_change(self):
+        self.service.last_source["updates"] = "raw.githubusercontent.com"
+        dialog = self.dialog()
+        self.assertIn("raw.githubusercontent.com", dialog.current_source.text())
+        self.service.source_changed.emit("download", "ghfast.top")
+        self.assertIn("ghfast.top", dialog.current_source.text())
+        self.service.download_progress.emit(800*1024, 1024*1024)
+        self.service.source_changed.emit("download", "gh-proxy.org")
+        self.service.download_progress.emit(0, 1024*1024)
+        self.assertIn("gh-proxy.org", dialog.current_source.text())
+        self.assertEqual(dialog.progress.value(), 0)
+        self.service.source_changed.emit("announcements", "ghfast.top")
+        self.assertIn("gh-proxy.org", dialog.current_source.text())
+        i18n.load_language("en-US")
+        dialog.retranslate()
+        self.assertIn("gh-proxy.org", dialog.current_source.text())
+        self.assertIn("Download", dialog.current_source.text())
+        self.assertEqual(dialog.current_source.textFormat(), Qt.PlainText)
+
+    def test_connection_change_rejected_during_background_check_restores_choice(self):
+        dialog = self.dialog()
+        self.service.check_updates()
+        dialog.source_mode.setCurrentIndex(dialog.source_mode.findData("github"))
+        self.assertEqual(dialog.source_mode.currentData(), "auto")
+        self.assertEqual(self.service.source_mode, "auto")
+        self.assertEqual(self.settings.value("updates/source_mode", "", str), "auto")
 
 
 class UpdateInstallControllerTests(unittest.TestCase):
@@ -522,6 +584,26 @@ class OnlineUpdateWorkspaceTests(unittest.TestCase):
         self.window.close()
         self.assertTrue(self.window.update_service.closed)
         self.assertFalse(self.window._network_check_timer.isActive())
+
+    def test_background_check_applies_saved_connection_mode(self):
+        self.window.settings.setValue("updates/source_mode", "ghproxy")
+        self.window._background_online_check()
+        self.assertEqual(self.window.update_service.source_mode, "ghproxy")
+        self.assertEqual(self.window.update_service.announcement_checks, [False])
+        self.assertTrue(self.window.update_service.checks)
+
+    def test_window_restores_connection_mode_before_network_work(self):
+        self.window.close()
+        self.window.deleteLater()
+        APP.processEvents()
+        QSettings().setValue("updates/source_mode", "ghfast")
+        self.window = MainWindow()
+        self.window.setAttribute(Qt.WA_DontShowOnScreen)
+        self.window.show()
+        APP.processEvents()
+        self.assertEqual(self.window.update_service.source_mode, "ghfast")
+        self.assertFalse(self.window.update_service.checks)
+        self.assertEqual(self.window.update_service.announcement_checks, [])
 
 
 class UpdateLaunchTests(unittest.TestCase):

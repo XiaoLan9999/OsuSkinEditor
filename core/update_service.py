@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from copy import deepcopy
 from pathlib import Path
-from urllib.parse import urlsplit, unquote
+from datetime import datetime
 import base64
 import hashlib
 import json
@@ -22,17 +22,18 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequ
 
 from core.app_version import BUILD_NUMBER, CHANNEL
 from core.update_protocol import verify_manifest, select_release
+from core.update_sources import (ANNOUNCEMENTS_URL, MANIFEST_URL, SOURCE_MODES,
+                                 source_urls, source_host, safe_transport_url, safe_url)
 
 
-ANNOUNCEMENTS_URL = "https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/announcements.json"
-MANIFEST_URL = "https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/manifest.json"
 METADATA_LIMIT = 1024*1024
 DOWNLOAD_LIMIT = 512*1024*1024
 CACHE_SECONDS = 12*60*60
-METADATA_TIMEOUT_MS = 15000
+METADATA_TIMEOUT_MS = 6000
+METADATA_SETTLE_MS = 1200
+DOWNLOAD_CONNECT_TIMEOUT_MS = 8000
 DOWNLOAD_IDLE_TIMEOUT_MS = 30000
 MAX_REDIRECTS = 5
-CDN_HOSTS = frozenset({"release-assets.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"})
 
 
 @dataclass
@@ -52,32 +53,27 @@ class _Transfer:
     digest: object = None
     release: dict | None = None
     read_queued: bool = False
+    canonical: str = ""
+    source_id: str = "github"
+    source_url: str = ""
+    sources: tuple = ()
+    source_index: int = 0
+    started_at: float = 0
+    conditional: bool = False
+
+
+@dataclass
+class _MetadataBatch:
+    kind: str
+    transfers: list = field(default_factory=list)
+    results: list = field(default_factory=list)
+    cached: dict | None = None
+    timer: QTimer | None = None
+    done: bool = False
 
 
 def _safe_url(url, *, download=False, redirected=False):
-    """No tokens, credentials, custom ports, HTTP downgrade, or suffix hosts."""
-    if not isinstance(url, str) or not 1 <= len(url) <= 8192:
-        return False
-    try:
-        parsed = urlsplit(str(url))
-        if (parsed.scheme != "https" or parsed.username is not None or parsed.password is not None
-                or parsed.port not in (None, 443) or parsed.fragment or not parsed.hostname):
-            return False
-    except (TypeError, ValueError):
-        return False
-    host = parsed.hostname.casefold()
-    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 or char == "\\" for char in url):
-        return False
-    if not download:
-        return host == "raw.githubusercontent.com" and parsed.path in (
-            urlsplit(ANNOUNCEMENTS_URL).path, urlsplit(MANIFEST_URL).path) and not parsed.query
-    if host == "github.com":
-        path = unquote(parsed.path)
-        prefix = "/XiaoLan9999/OsuSkinEditor/releases/download/"
-        tail = path[len(prefix):] if path.startswith(prefix) else ""
-        return bool(tail and len(tail.split("/")) == 2 and tail.lower().endswith(".exe")
-                    and not any(part in ("", ".", "..") for part in tail.split("/")) and not parsed.query)
-    return redirected and host in CDN_HOSTS
+    return safe_url(url, download=download, redirected=redirected)
 
 
 def _etag(value):
@@ -104,9 +100,10 @@ class UpdateService(QObject):
     download_progress = Signal(int, int)
     download_ready = Signal(str, object)
     state_changed = Signal(str)
+    source_changed = Signal(str, str)
 
     def __init__(self, parent=None, *, cache_dir=None, network_manager=None,
-                 current_build_number=None, public_key=None):
+                 current_build_number=None, public_key=None, source_mode="auto"):
         super().__init__(parent)
         location = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
         cache_base = (Path(location) if location and Path(location).is_absolute() else
@@ -124,6 +121,27 @@ class UpdateService(QObject):
         self._ready_path = None
         self._ready_release = None
         self.last_result_from_cache = {"announcements": False, "updates": False}
+        if source_mode not in SOURCE_MODES:
+            raise ValueError("Unknown update source mode")
+        self.source_mode = source_mode
+        self.last_source = {}
+        self._source_health = {}
+        self._download_preferred = None
+
+    def set_source_mode(self, mode):
+        if mode not in SOURCE_MODES or self._closed:
+            return False
+        if mode == self.source_mode:
+            return True
+        if self._operations or self._ready_path:
+            return False
+        self.source_mode = mode
+        return True
+
+    def _show_source(self, kind, source_id):
+        host = source_host(source_id, kind)
+        self.last_source[kind] = host
+        self.source_changed.emit(kind, host)
 
     @property
     def downloading(self):
@@ -180,15 +198,20 @@ class UpdateService(QObject):
                 return None
             data = base64.b64decode(cache["body"], validate=True)
             value = self._validate(kind, data)
-            return {"body": data, "value": value, "fetched_at": fetched, "etag": _etag(cache.get("etag", ""))}
+            source_url = cache.get("source_url", "")
+            canonical = MANIFEST_URL if kind == "updates" else ANNOUNCEMENTS_URL
+            if not safe_transport_url(source_url, canonical=canonical):
+                source_url = ""  # Older caches retain their body, not an unbound ETag.
+            return {"body": data, "value": value, "fetched_at": fetched,
+                    "etag": _etag(cache.get("etag", "")), "source_url": source_url}
         except (OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError):
             return None
 
-    def _cache_write(self, kind, data, tag):
+    def _cache_write(self, kind, data, tag, source_url):
         temporary = None
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            payload = json.dumps({"fetched_at": time.time(), "etag": _etag(tag),
+            payload = json.dumps({"fetched_at": time.time(), "etag": _etag(tag), "source_url": source_url,
                                   "body": base64.b64encode(data).decode("ascii")})
             with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.cache_dir,
                                              prefix=kind+"-", suffix=".tmp", delete=False) as stream:
@@ -206,6 +229,8 @@ class UpdateService(QObject):
                     pass
 
     def _deliver(self, kind, value, from_cache):
+        if self._closed:
+            return
         self.last_result_from_cache[kind] = from_cache
         if kind == "announcements":
             self.announcements_ready.emit(deepcopy(value))
@@ -237,20 +262,90 @@ class UpdateService(QObject):
             return True  # Coalesce refreshes while the same endpoint is in flight.
         cached = self._cache_read(kind)
         if cached and not force and 0 <= time.time()-cached["fetched_at"] < CACHE_SECONDS:
+            if cached["source_url"]:
+                for source_id, candidate in source_urls(url):
+                    if candidate == cached["source_url"]:
+                        self._show_source(kind, source_id)
             self._deliver(kind, cached["value"], True)
             return True
-        timer = QTimer(self)
-        timer.setSingleShot(True)
-        transfer = _Transfer(kind, url, timer, cached=cached)
-        self._operations[kind] = transfer
-        timer.timeout.connect(lambda: self._fail(transfer, "The network request timed out"))
-        timer.start(METADATA_TIMEOUT_MS)
-        self._request(transfer, url)
+        batch = _MetadataBatch(kind, cached=cached, timer=QTimer(self))
+        batch.timer.setSingleShot(True)
+        batch.timer.timeout.connect(lambda: self._finish_metadata(batch))
+        self._operations[kind] = batch
+        for source_id, candidate in source_urls(url, self.source_mode):
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            transfer = _Transfer(kind, candidate, timer, cached=cached, canonical=url,
+                                 source_id=source_id, source_url=candidate, started_at=time.monotonic())
+            batch.transfers.append(transfer)
+            timer.timeout.connect(lambda t=transfer: self._fail(t, "The network request timed out"))
         self._state_update()
+        for transfer in batch.transfers:
+            if transfer.done or self._closed:
+                continue
+            transfer.timer.start(METADATA_TIMEOUT_MS)
+            self._request(transfer, transfer.url)
         return True
 
+    def _metadata_score(self, kind, value):
+        if kind == "updates":
+            release = value["channels"][self._channel]
+            return (release["build_number"] if release else 0,
+                    datetime.fromisoformat(value["published_at"].replace("Z", "+00:00")).timestamp())
+        return (max((entry.get("date", "") for entry in value), default=""), len(value))
+
+    def _finish_metadata(self, batch):
+        if batch.done or self._operations.get(batch.kind) is not batch:
+            return
+        batch.done = True
+        batch.timer.stop()
+        batch.timer.deleteLater()
+        for transfer in batch.transfers:
+            if not transfer.done:
+                self._complete(transfer, abort=True)
+        del self._operations[batch.kind]
+        if not batch.results:
+            self._state_update()
+            if not self._closed:
+                self.failed.emit(batch.kind, "All selected update sources failed; check the connection or choose another source")
+            return
+        # A fast stale mirror must not replace a newer verified response/cache.
+        best = max(batch.results, key=lambda item: (self._metadata_score(batch.kind, item["value"]), -item["elapsed"]))
+        from_cache = bool(batch.cached and batch.kind == "updates" and
+                          self._metadata_score(batch.kind, batch.cached["value"]) > self._metadata_score(batch.kind, best["value"]))
+        if from_cache:
+            value = batch.cached["value"]
+            cached_url = batch.cached["source_url"]
+            for source_id, candidate in source_urls(MANIFEST_URL):
+                if candidate == cached_url:
+                    self._show_source(batch.kind, source_id)
+                    break
+        else:
+            value = best["value"]
+            self._cache_write(batch.kind, best["data"], best["etag"], best["source_url"])
+            self._show_source(batch.kind, best["source_id"])
+        self._state_update()
+        self._deliver(batch.kind, value, from_cache)
+
+    def _metadata_success(self, transfer, value, data, tag):
+        batch = self._operations.get(transfer.kind)
+        if not isinstance(batch, _MetadataBatch) or batch.done:
+            return
+        elapsed = time.monotonic()-transfer.started_at
+        self._source_health[transfer.source_id] = elapsed
+        actual_source = next(source_id for source_id, url in source_urls(transfer.canonical) if url == transfer.url)
+        batch.results.append({"value": value, "data": data, "etag": tag, "elapsed": elapsed,
+                              "source_id": actual_source, "source_url": transfer.url})
+        self._complete(transfer)
+        if all(item.done for item in batch.transfers):
+            self._finish_metadata(batch)
+        elif not batch.timer.isActive():
+            batch.timer.start(METADATA_SETTLE_MS)
+
     def _request(self, transfer, url):
-        if not _safe_url(url, download=transfer.kind == "download", redirected=transfer.redirects > 0):
+        if self._closed or transfer.done:
+            return
+        if not safe_transport_url(url, canonical=transfer.canonical, download=transfer.kind == "download", redirected=transfer.redirects > 0):
             self._fail(transfer, "The update URL or redirect is not allowed")
             return
         request = QNetworkRequest(QUrl(url))
@@ -260,21 +355,28 @@ class UpdateService(QObject):
         request.setAttribute(QNetworkRequest.CookieSaveControlAttribute, QNetworkRequest.Manual)
         request.setRawHeader(b"User-Agent", b"OsuSkinEditor-Update/1")
         request.setRawHeader(b"Accept", b"application/octet-stream" if transfer.kind == "download" else b"application/json")
-        if transfer.cached and transfer.cached["etag"]:
+        transfer.conditional = bool(transfer.cached and transfer.cached["etag"] and transfer.cached["source_url"] == url)
+        if transfer.conditional:
             request.setRawHeader(b"If-None-Match", transfer.cached["etag"].encode("ascii"))
         try:
             reply = self.network.get(request)
         except Exception:
             self._fail(transfer, "Unable to start the network request")
             return
+        if self._closed or transfer.done:
+            reply.abort()
+            reply.deleteLater()
+            return
         transfer.url, transfer.reply = url, reply
+        transfer.read_queued = False
         reply.setReadBufferSize(128*1024)
         reply.readyRead.connect(lambda: self._read(transfer, reply))
         reply.metaDataChanged.connect(lambda: self._headers(transfer, reply))
         reply.finished.connect(lambda: self._finished(transfer, reply))
-        reply.sslErrors.connect(lambda _errors: self._fail(transfer, "TLS certificate validation failed"))
+        reply.sslErrors.connect(lambda _errors: self._fail(transfer, "TLS certificate validation failed")
+                                if transfer.reply is reply and not transfer.done else None)
         if transfer.kind == "download":
-            transfer.timer.start(DOWNLOAD_IDLE_TIMEOUT_MS)
+            transfer.timer.start(DOWNLOAD_IDLE_TIMEOUT_MS if transfer.received else DOWNLOAD_CONNECT_TIMEOUT_MS)
 
     @staticmethod
     def _status(reply):
@@ -298,7 +400,7 @@ class UpdateService(QObject):
         if transfer.done or transfer.reply is not reply:
             return
         self._headers(transfer, reply)
-        if transfer.done:
+        if transfer.done or transfer.reply is not reply:
             return
         status = self._status(reply)
         if status != 200:
@@ -326,7 +428,7 @@ class UpdateService(QObject):
                     if written != len(chunk):
                         raise OSError("Short write")
                 except OSError:
-                    self._fail(transfer, "Unable to write the update staging file")
+                    self._fail(transfer, "Unable to write the update staging file", retry=False)
                     return
                 transfer.digest.update(chunk)
                 transfer.timer.start(DOWNLOAD_IDLE_TIMEOUT_MS)
@@ -342,6 +444,8 @@ class UpdateService(QObject):
         # Qt's receive buffer faster than the disk writer consumes it.
         transfer.read_queued = True
         def resume():
+            if transfer.done or transfer.reply is not reply:
+                return
             transfer.read_queued = False
             self._read(transfer, reply)
         QTimer.singleShot(0, resume)
@@ -350,7 +454,7 @@ class UpdateService(QObject):
         if transfer.done or transfer.reply is not reply:
             return
         self._read(transfer, reply)
-        if transfer.done:
+        if transfer.done or transfer.reply is not reply:
             return
         if reply.bytesAvailable():
             QTimer.singleShot(0, lambda: self._finished(transfer, reply))
@@ -379,7 +483,7 @@ class UpdateService(QObject):
                 return
             self._finish_download(transfer)
             return
-        if status == 304 and transfer.cached:
+        if status == 304 and transfer.cached and transfer.conditional:
             data = transfer.cached["body"]
             tag = transfer.cached["etag"]
         elif status == 200:
@@ -396,9 +500,7 @@ class UpdateService(QObject):
         except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
             self._fail(transfer, "The metadata is invalid or its signature could not be verified")
             return
-        self._cache_write(transfer.kind, data, tag)
-        self._complete(transfer)
-        self._deliver(transfer.kind, value, False)
+        self._metadata_success(transfer, value, data, tag)
 
     def download_release(self, release):
         if self._closed:
@@ -433,10 +535,18 @@ class UpdateService(QObject):
             return False
         timer = QTimer(self)
         timer.setSingleShot(True)
-        transfer = _Transfer("download", authorized["url"], timer, stream=stream, partial=partial,
-                             staging=staging, digest=hashlib.sha256(), release=deepcopy(authorized))
+        sources = list(source_urls(authorized["url"], self.source_mode))
+        if self.source_mode == "auto":
+            sources.sort(key=lambda item: (item[0] != self._download_preferred,
+                                          self._source_health.get(item[0], float("inf"))))
+        source_id, source_url = sources[0]
+        transfer = _Transfer("download", source_url, timer, stream=stream, partial=partial,
+                             staging=staging, digest=hashlib.sha256(), release=deepcopy(authorized),
+                             canonical=authorized["url"], sources=tuple(sources), source_id=source_id,
+                             source_url=source_url)
         self._operations["download"] = transfer
         timer.timeout.connect(lambda: self._fail(transfer, "The update download stopped responding"))
+        self._show_source("download", source_id)
         self._request(transfer, transfer.url)
         self._state_update()
         return not transfer.done
@@ -455,10 +565,12 @@ class UpdateService(QObject):
                 raise OSError("Prepared path already exists")
             os.rename(transfer.partial, payload)
         except OSError:
-            self._fail(transfer, "Unable to prepare the verified update file")
+            self._fail(transfer, "Unable to prepare the verified update file", retry=False)
             return
         self._ready_path = str(payload)
         self._ready_release = deepcopy(transfer.release)
+        self._download_preferred = transfer.source_id
+        self._show_source("download", transfer.source_id)
         self._complete(transfer)
         self.download_ready.emit(self._ready_path, deepcopy(self._ready_release))
 
@@ -494,11 +606,46 @@ class UpdateService(QObject):
             except OSError:
                 pass
 
-    def _fail(self, transfer, message):
+    def _retry_download(self, transfer):
+        if self._closed or transfer.source_index+1 >= len(transfer.sources):
+            return False
+        # Detach before abort: Qt/FakeReply may emit finished synchronously.
+        previous, transfer.reply = transfer.reply, None
+        if previous is not None:
+            previous.abort()
+            previous.deleteLater()
+        transfer.timer.stop()
+        try:
+            transfer.stream.seek(0)
+            transfer.stream.truncate(0)
+        except (OSError, ValueError):
+            self._fail(transfer, "Unable to reset the update staging file", retry=False)
+            return True
+        transfer.source_index += 1
+        transfer.source_id, transfer.source_url = transfer.sources[transfer.source_index]
+        transfer.url = transfer.source_url
+        transfer.received = 0
+        transfer.redirects = 0
+        transfer.read_queued = False
+        transfer.digest = hashlib.sha256()
+        transfer.data.clear()
+        self.download_progress.emit(0, transfer.release["size"])
+        self._show_source("download", transfer.source_id)
+        self._request(transfer, transfer.url)
+        return True
+
+    def _fail(self, transfer, message, retry=True):
         if transfer.done:
+            return
+        if transfer.kind == "download" and retry and self._retry_download(transfer):
             return
         self._complete(transfer, abort=True)
         self._remove_partial(transfer)
+        if transfer.kind != "download":
+            batch = self._operations.get(transfer.kind)
+            if isinstance(batch, _MetadataBatch) and not batch.done and all(item.done for item in batch.transfers):
+                self._finish_metadata(batch)
+            return
         if not self._closed:
             self.failed.emit(transfer.kind, message)
 
@@ -515,6 +662,16 @@ class UpdateService(QObject):
 
     def close(self):
         self._closed = True
-        for transfer in list(self._operations.values()):
-            self._complete(transfer, abort=True)
-            self._remove_partial(transfer)
+        for operation in list(self._operations.values()):
+            if isinstance(operation, _MetadataBatch):
+                operation.done = True
+                operation.timer.stop()
+                operation.timer.deleteLater()
+                for transfer in operation.transfers:
+                    if not transfer.done:
+                        self._complete(transfer, abort=True)
+            else:
+                self._complete(operation, abort=True)
+                self._remove_partial(operation)
+        self._operations.clear()
+        self._state_update()
