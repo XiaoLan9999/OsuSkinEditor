@@ -10,6 +10,8 @@ Windows 版下载后直接运行，无需安装 Python
 
 **[下载 v1.6.0-preview.7 开发预览](https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.7/OsuSkinEditor-v1.6.0-preview.7-windows-x64.exe)** · [开发预览发布说明](https://github.com/XiaoLan9999/OsuSkinEditor/releases/tag/v1.6.0-preview.7)
 
+原站打不开时可使用 [GHFast 备用下载](https://ghfast.top/https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.7/OsuSkinEditor-v1.6.0-preview.7-windows-x64.exe) 或 [GH-Proxy 备用下载](https://gh-proxy.org/https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.7/OsuSkinEditor-v1.6.0-preview.7-windows-x64.exe)，预览 r6 可通过原有更新入口升级，直连不可用时先手动下载 r7 并替换一次
+
 **开发预览包含** Mania 键盘试玩与舞台侧图、Standard 自动测试、判定与连击素材检查，以及独立预览窗口，这些功能不在旧版 v1.5 程序中
 
 当前开发预览为 **1.6.0-preview.7 / preview-r7，构建号 7**，包含在线公告与多个下载线路自动检测
