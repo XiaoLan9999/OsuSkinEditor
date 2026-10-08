@@ -2,6 +2,46 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "preview-r7",
+      "version": "1.6.0-preview.7",
+      "date": "2026-10-09",
+      "channel": "preview",
+      "title": {
+        "zh-CN": "多线路更新与国内连接优化",
+        "en-US": "Multiple update routes and connection selection"
+      },
+      "summary": {
+        "zh-CN": "开发预览：检测 GitHub 与两条公共加速线路的真实内容，自动选择有效来源并在下载失败时回退",
+        "en-US": "Development preview: validate real content from GitHub and two public proxy routes, select a valid source and fall back when downloads fail"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "更新连接",
+            "en-US": "Update connections"
+          },
+          "items": {
+            "zh-CN": [
+              "新增自动选择、GitHub 直连、GHFast、GH-Proxy 连接方式，记住选择并显示当前线路",
+              "自动模式同时检测实际公告和签名清单，不把域名能连接或错误页面当作有效更新",
+              "收到有效响应后短暂收集其他线路，优先使用最新有效签名信息，下载失败时自动回退",
+              "切换下载线路后从头下载并重置进度，继续校验 HTTPS、发布签名、文件大小与 SHA-256",
+              "缓存来源与 ETag 绑定，离线仍可查看当前版本说明和可用的在线缓存",
+              "公共加速服务由第三方运营，不承诺持续可用，后续可加入自有国内 HTTPS 镜像"
+            ],
+            "en-US": [
+              "Choose Automatic, GitHub direct, GHFast or GH-Proxy; the editor remembers your preference and shows the current route",
+              "Automatic mode checks actual announcements and signed manifests, rejecting connection-only success and error pages",
+              "Collect other routes briefly after a valid response, prefer the latest valid signed information and fall back when downloads fail",
+              "Restart downloads and reset progress when switching routes, retaining HTTPS, signature, size and SHA-256 checks",
+              "Bind cached ETags to their source; keep the current build notes and usable online cache available offline",
+              "Public proxy services are operated by third parties without an availability promise; an owner-controlled HTTPS mirror can be added later"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "preview-r6",
       "version": "1.6.0-preview.6",
       "date": "2026-09-28",
