@@ -2,6 +2,66 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "preview-r8",
+      "version": "1.6.0-preview.8",
+      "date": "2026-10-10",
+      "channel": "preview",
+      "title": {
+        "zh-CN": "OSK 皮肤包与 lazer 编辑支持",
+        "en-US": "OSK skin packages and editing lazer exports"
+      },
+      "summary": {
+        "zh-CN": "开发预览：直接导入 OSK 创建可编辑副本，修改素材与配置后导出新包，保留原始皮肤包和 lazer JSON 布局",
+        "en-US": "Development preview: import OSK packages into editable copies, export changes as a new package, and preserve the original package and lazer JSON layouts"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "导入、编辑与导出",
+            "en-US": "Import, edit and export"
+          },
+          "items": {
+            "zh-CN": [
+              "新增文件菜单导入与导出、首页导入按钮、OSK 拖拽和 Ctrl+Shift+O / Ctrl+Shift+E 快捷键",
+              "导入时创建持久的独立工作副本，自动打开并保留最近记录，原始 OSK 不修改",
+              "编辑配置、图片、音频和皮肤设计后可导出新 OSK，导出前选择应用当前修改、仅导出已保存内容或取消",
+              "保留包内子目录、动画与音频，单层包装文件夹自动展平，缺少 skin.ini 的有效包在副本中补最小配置",
+              "保留 lazer 的 skininfo.json 与控件布局 JSON 原始内容，当前预览使用传统 Standard / Mania 素材，原生组件请在 lazer 中确认",
+              "兼容旧版 lazer 导出包里的零字节目录记录，重新导出时生成正常目录结构"
+            ],
+            "en-US": [
+              "Add file-menu import and export, a home import button, OSK drag and drop, and Ctrl+Shift+O / Ctrl+Shift+E shortcuts",
+              "Create a persistent independent working copy, open it automatically and keep it in recent skins without modifying the original OSK",
+              "Export configuration, image, audio and design changes to a new OSK; apply pending edits, export saved content only, or cancel",
+              "Preserve subdirectories, animations and audio, flatten a single wrapper folder, and add a minimal skin.ini to valid packages when needed",
+              "Preserve original lazer skininfo.json and layout JSON bytes; the preview uses legacy Standard / Mania assets, so check native components in lazer",
+              "Handle legacy lazer zero-byte folder records and export a clean archive structure"
+            ]
+          }
+        },
+        {
+          "title": {
+            "zh-CN": "文件保护与操作进度",
+            "en-US": "File protection and progress"
+          },
+          "items": {
+            "zh-CN": [
+              "导入导出显示进度并支持取消，失败或取消不会留下半成品或替换已有目标",
+              "检查 ZIP 路径、CRC、文件数量与展开大小，拒绝路径逃逸、符号链接和损坏内容",
+              "导出不包含编辑器历史快照与素材备份，不覆盖导入来源的原始 OSK",
+              "保留多线路更新、签名校验和旧版备份流程，离线公告仅包含当前 r8 说明"
+            ],
+            "en-US": [
+              "Show import and export progress with cancellation; failure or cancellation does not leave partial output or replace an existing target",
+              "Validate ZIP paths, CRC, entry counts and extracted sizes; reject escaping paths, symbolic links and damaged content",
+              "Exclude editor history and asset backups from exports, and protect the original source OSK",
+              "Keep multiple update routes, signature checks and backup recovery; offline notes cover only this r8 build"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "preview-r7",
       "version": "1.6.0-preview.7",
       "date": "2026-10-09",
