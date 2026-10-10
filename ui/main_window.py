@@ -34,13 +34,16 @@ from ui.widgets.wheel_guard import ClickWheelComboBox
 from ui.widgets.asset_inspector import AssetInspector
 from ui.widgets.identity import AvatarBadge, TechPanel, WelcomeCanvas
 from ui.icons import workspace_icon
+from ui.skin_archive_workflow import SkinArchiveWorkflow
 from core import i18n
 
 RECENT_LIMIT = 12
 
 
-class MainWindow(QMainWindow):
+class MainWindow(SkinArchiveWorkflow, QMainWindow):
     def _open_assets_manager(self, tab: str = "image"):
+        if self._archive_controller.busy:
+            return
         if not self.skin:
             self.on_open_generic()
         if not self.skin:
@@ -88,6 +91,7 @@ class MainWindow(QMainWindow):
         self._preparing_update = False
         self._update_exit_authorized = False
         self._quit_after_cancel = False
+        self._init_archive_workflow()
         self.update_service = UpdateService(self)
         self._apply_update_source_mode()
         self.update_service.announcements_ready.connect(self._online_notes_ready)
@@ -122,6 +126,8 @@ class MainWindow(QMainWindow):
         self.recent_menu = QMenu(self)
 
         self.act_open = QAction(self)
+        self.act_import_osk = QAction(self)
+        self.act_export_osk = QAction(self)
         self.act_open_osu = QAction(self)
         self.act_open_last = QAction(self)
         self.act_reload = QAction(self)
@@ -142,16 +148,23 @@ class MainWindow(QMainWindow):
         self.act_link_blog = QAction(self)
 
         self.act_open.triggered.connect(self.on_open_generic)
+        self.act_import_osk.triggered.connect(self.on_import_osk)
+        self.act_export_osk.triggered.connect(self.on_export_osk)
         self.act_open_osu.triggered.connect(self.on_open_osu_skins)
         self.act_open_last.triggered.connect(self.on_open_last_skin)
         self.act_reload.triggered.connect(self.reload_skin)
         self.act_set_osu.triggered.connect(self.on_set_osu_root)
         self.act_quit.triggered.connect(self.close)
         self.act_open.setShortcut(QKeySequence.Open)
+        self.act_import_osk.setShortcut("Ctrl+Shift+O")
+        self.act_export_osk.setShortcut("Ctrl+Shift+E")
         self.act_reload.setShortcut("F5")
         self.act_quit.setShortcut(QKeySequence.Quit)
         self.btn_open.clicked.connect(self.on_open_generic)
         self.btn_welcome_open.clicked.connect(self.on_open_generic)
+        self.btn_import_osk.clicked.connect(self.on_import_osk)
+        self.btn_welcome_osk.clicked.connect(self.on_import_osk)
+        self.btn_export_osk.clicked.connect(self.on_export_osk)
         self.btn_welcome_osu.clicked.connect(self.on_open_osu_skins)
         self.btn_images.clicked.connect(lambda: self._open_assets_manager("image"))
         self.btn_audio.clicked.connect(lambda: self._open_assets_manager("audio"))
@@ -217,7 +230,11 @@ class MainWindow(QMainWindow):
         self.act_center_alpha.triggered.connect(lambda: self.on_set_center_mode("alpha"))
 
         # build menus（去掉 Settings 里的 “STD OFFSETS” 条目）
-        self.file_menu.addAction(self.act_open); self.file_menu.addAction(self.act_open_osu); self.file_menu.addAction(self.act_open_last); self.file_menu.addMenu(self.recent_menu)
+        self.file_menu.addAction(self.act_open)
+        self.file_menu.addAction(self.act_import_osk)
+        self.file_menu.addAction(self.act_export_osk)
+        self.file_menu.addSeparator()
+        self.file_menu.addAction(self.act_open_osu); self.file_menu.addAction(self.act_open_last); self.file_menu.addMenu(self.recent_menu)
         self.file_menu.addAction(self.act_reload); self.file_menu.addSeparator(); self.file_menu.addAction(self.act_set_osu); self.file_menu.addSeparator(); self.file_menu.addAction(self.act_quit)
         self.settings_menu.addMenu(self.center_menu)
         # 不再添加 self.act_offsets 到 Settings（它现在在 Debug 面板里）
@@ -316,11 +333,22 @@ class MainWindow(QMainWindow):
         self.skin_path.setTextFormat(Qt.PlainText)
         self.skin_path.setMinimumWidth(0); self.skin_path.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         titles.addWidget(eyebrow); titles.addWidget(self.skin_title); titles.addWidget(self.skin_path)
+        self.archive_note = QLabel()
+        self.archive_note.setObjectName("Muted")
+        self.archive_note.setTextFormat(Qt.PlainText)
+        self.archive_note.setWordWrap(True)
+        self.archive_note.hide()
+        titles.addWidget(self.archive_note)
         header_row.addLayout(titles, 1)
         self.btn_folder = QPushButton(); self.btn_reload = QPushButton(); self.btn_open = QPushButton()
+        self.btn_import_osk = QPushButton(); self.btn_export_osk = QPushButton()
         self.btn_open.setObjectName("PrimaryButton")
-        for button, icon in ((self.btn_folder, "folder"), (self.btn_reload, "reload"), (self.btn_open, "open")):
-            button.setIcon(workspace_icon(icon)); header_row.addWidget(button)
+        header_actions = QGridLayout()
+        header_actions.setSpacing(8)
+        for button, icon, row, col in ((self.btn_folder, "folder", 0, 0), (self.btn_reload, "reload", 0, 1),
+                (self.btn_open, "open", 0, 2), (self.btn_import_osk, "open", 1, 1), (self.btn_export_osk, "folder", 1, 2)):
+            button.setIcon(workspace_icon(icon)); header_actions.addWidget(button, row, col)
+        header_row.addLayout(header_actions)
         layout.addWidget(header)
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setChildrenCollapsible(False)
@@ -408,7 +436,9 @@ class MainWindow(QMainWindow):
         welcome_actions = QHBoxLayout(); welcome_actions.addStretch()
         self.btn_welcome_open = QPushButton(); self.btn_welcome_open.setObjectName("PrimaryButton")
         self.btn_welcome_osu = QPushButton()
-        welcome_actions.addWidget(self.btn_welcome_open); welcome_actions.addWidget(self.btn_welcome_osu); welcome_actions.addStretch()
+        self.btn_welcome_osk = QPushButton()
+        welcome_actions.addWidget(self.btn_welcome_open); welcome_actions.addWidget(self.btn_welcome_osk)
+        welcome_actions.addWidget(self.btn_welcome_osu); welcome_actions.addStretch()
         welcome_layout.addLayout(welcome_actions)
         self.welcome_hint = QLabel(); self.welcome_hint.setObjectName("WelcomeHint"); self.welcome_hint.setAlignment(Qt.AlignCenter); self.welcome_hint.setWordWrap(True)
         welcome_layout.addWidget(self.welcome_hint)
@@ -504,7 +534,7 @@ class MainWindow(QMainWindow):
         host.restore_requested.connect(lambda: self._restore_preview(closing_host=True))
         host.fullscreen_changed.connect(lambda _: self._preview_mode_changed(self.tabs.currentIndex()))
         host.setCentralWidget(self.preview_panel)
-        for action in (self.act_open, self.act_reload):
+        for action in (self.act_open, self.act_import_osk, self.act_export_osk, self.act_reload):
             host.addAction(action)
         host.show()
         self.preview_panel.show()
@@ -743,6 +773,7 @@ class MainWindow(QMainWindow):
         self._filter_assets()
         self._retranslate_preview_window()
         self._preview_mode_changed(self.tabs.currentIndex())
+        self._sync_archive_actions()
 
     def _filter_assets(self, *args):
         needle = self.asset_search.text().strip().casefold()
@@ -777,8 +808,13 @@ class MainWindow(QMainWindow):
         urls = mime.urls() if mime.hasUrls() else []
         if len(urls) != 1 or not urls[0].isLocalFile(): return None
         path = Path(urls[0].toLocalFile())
-        if path.is_file() and path.name.lower() == "skin.ini": path = path.parent
-        return path if path.is_dir() and (path / "skin.ini").is_file() else None
+        try:
+            if path.is_file() and path.suffix.casefold() == ".osk":
+                return path
+            if path.is_file() and path.name.lower() == "skin.ini": path = path.parent
+            return path if path.is_dir() and any(p.name.casefold() == "skin.ini" and p.is_file() for p in path.iterdir()) else None
+        except OSError:
+            return None
 
     def dragEnterEvent(self, event):
         if self._dropped_skin(event.mimeData()): event.acceptProposedAction()
@@ -912,6 +948,13 @@ class MainWindow(QMainWindow):
             self.resize(1280, 800)
 
     def closeEvent(self, event):
+        if self._archive_controller.busy:
+            self._close_after_archive = True
+            self._archive_controller.cancel()
+            self.statusBar().showMessage(i18n.t("osk.cancel_close"))
+            event.ignore()
+            return
+        self._close_after_archive = False
         if not self._update_exit_authorized:
             if not self.mania_ini_dock._confirm_discard_if_dirty():
                 event.ignore()
@@ -924,6 +967,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(i18n.t("updater.wait_cancel"))
             event.ignore()
             return
+        self._archive_controller.close()
         self._closing = True
         self._update_notice_timer.stop()
         self._network_check_timer.stop()
@@ -1110,7 +1154,7 @@ class MainWindow(QMainWindow):
             self._software_update_dialog.set_preparing(active)
 
     def _request_update_install(self):
-        if self._closing or self._preparing_update:
+        if self._closing or self._preparing_update or self._archive_controller.busy:
             return
         payload, release = self.update_service.ready_path, self.update_service.ready_release
         if not payload or not release or installed_executable() is None:
@@ -1230,6 +1274,11 @@ class MainWindow(QMainWindow):
         self.act_link_blog.setText(i18n.t("links.blog", "个人博客"))
 
         self.act_open.setText(i18n.t("action.open_skin_folder", "Open Skin Folder…"))
+        self.act_import_osk.setText(i18n.t("osk.import"))
+        self.act_export_osk.setText(i18n.t("osk.export"))
+        self.btn_import_osk.setText(i18n.t("osk.button_import"))
+        self.btn_welcome_osk.setText(i18n.t("osk.button_import"))
+        self.btn_export_osk.setText(i18n.t("osk.button_export"))
         self.act_open_osu.setText(i18n.t("action.open_osu_skins", "Open osu! Skins…"))
         self.act_open_last.setText(i18n.t("action.open_last_skin", "Open Last Skin"))
         self.act_reload.setText(i18n.t("action.reload", "Reload"))
@@ -1326,6 +1375,8 @@ class MainWindow(QMainWindow):
             act=self.recent_menu.addAction(p); act.triggered.connect(lambda checked=False, pp=p: self.load_skin(pp))
 
     def on_open_generic(self):
+        if self._archive_controller.busy or self._preparing_update:
+            return
         start=self._start_dir_for_dialog(); d=QFileDialog.getExistingDirectory(self, i18n.t("dialog.select_skin", "Select skin folder"), start)
         if d: self.load_skin(d)
 
@@ -1349,6 +1400,11 @@ class MainWindow(QMainWindow):
             self._remember_osu_root(d); self.statusBar().showMessage(i18n.t("status.osu_set", "osu! folder set: {path}").format(path=d), 5000)
 
     def load_skin(self, directory: str, check_dirty=True):
+        if self._archive_controller.busy or self._preparing_update:
+            return False
+        path = Path(directory)
+        if path.is_file() and path.suffix.casefold() == ".osk":
+            return self.import_osk_file(path)
         # A failed folder selection must preserve the current workspace.
         try: candidate = self.loader.load(directory)
         except Exception as e:

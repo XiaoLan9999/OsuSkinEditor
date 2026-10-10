@@ -1,6 +1,6 @@
 # osu! 小蓝皮肤编辑器
 
-在一个窗口里浏览皮肤素材、调整 Mania 配置、设计上隐与球槽高度，并通过预览与简单试玩检查皮肤效果
+在一个窗口里打开皮肤文件夹或导入 OSK、浏览皮肤素材、调整 Mania 配置、设计上隐与球槽高度，并通过预览与简单试玩检查皮肤效果
 
 深蓝与冰青科技风界面，支持中文 / English，适合修改已有皮肤、调试判定图像与制作自己的 Mania 布局
 
@@ -8,13 +8,13 @@
 
 Windows 版下载后直接运行，无需安装 Python
 
-**[下载 v1.6.0-preview.7 开发预览](https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.7/OsuSkinEditor-v1.6.0-preview.7-windows-x64.exe)** · [开发预览发布说明](https://github.com/XiaoLan9999/OsuSkinEditor/releases/tag/v1.6.0-preview.7)
+**[下载 v1.6.0-preview.8 开发预览](https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.8/OsuSkinEditor-v1.6.0-preview.8-windows-x64.exe)** · [开发预览发布说明](https://github.com/XiaoLan9999/OsuSkinEditor/releases/tag/v1.6.0-preview.8)
 
-原站打不开时可使用 [GHFast 备用下载](https://ghfast.top/https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.7/OsuSkinEditor-v1.6.0-preview.7-windows-x64.exe) 或 [GH-Proxy 备用下载](https://gh-proxy.org/https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.7/OsuSkinEditor-v1.6.0-preview.7-windows-x64.exe)，预览 r6 可通过原有更新入口升级，直连不可用时先手动下载 r7 并替换一次
+原站打不开时可使用 [GHFast 备用下载](https://ghfast.top/https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.8/OsuSkinEditor-v1.6.0-preview.8-windows-x64.exe) 或 [GH-Proxy 备用下载](https://gh-proxy.org/https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.8/OsuSkinEditor-v1.6.0-preview.8-windows-x64.exe)，预览 r7 可自动选择线路升级，r6 直连不可用时请先手动下载新版并替换一次
 
 **开发预览包含** Mania 键盘试玩与舞台侧图、Standard 自动测试、判定与连击素材检查，以及独立预览窗口，这些功能不在旧版 v1.5 程序中
 
-当前开发预览为 **1.6.0-preview.7 / preview-r7，构建号 7**，包含在线公告与多个下载线路自动检测
+当前开发预览为 **1.6.0-preview.8 / preview-r8，构建号 8**，新增 OSK 导入、可编辑工作副本与 OSK 导出，保留在线公告与多个下载线路自动检测
 
 从 **v1.5 或预览 r1–r5** 升级时，请首次手动下载并运行上面的开发预览，之后可通过程序内的更新入口升级
 
@@ -27,7 +27,7 @@ Windows 版下载后直接运行，无需安装 Python
 
 ## 在线公告与程序更新
 
-「关于」→「更新公告」将**当前版本说明**与**在线公告历史**分开显示，当前 r7 说明随程序打包，离线仍可阅读，历史公告从项目仓库获取，网络不可用时保留本地说明与可用缓存
+「关于」→「更新公告」将**当前版本说明**与**在线公告历史**分开显示，当前 r8 说明随程序打包，离线仍可阅读，历史公告从项目仓库获取，网络不可用时保留本地说明与可用缓存
 
 新公告首次显示后记住已读状态，可取消「启动时显示新公告」，之后仍能从菜单手动查看
 
@@ -52,6 +52,28 @@ Windows 版下载后直接运行，无需安装 Python
 公告来自仓库的 [announcements.json](https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/announcements.json)，签名更新清单来自 [manifest.json](https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/manifest.json)，当前没有使用 GitHub Pages
 
 构建与发布维护步骤见 [更新发布说明](docs/UPDATES.md)
+
+## OSK 与 osu!lazer 皮肤
+
+![OSK 导入后的编辑工作区](docs/images/osk-workspace.png)
+
+`.osk` 是使用皮肤包后缀的 ZIP，lazer 也通过这个格式导入与导出皮肤，使用 lazer 的用户可以先在游戏中导出皮肤，再直接交给编辑器处理，[官方格式说明](https://osu.ppy.sh/wiki/en/Client/File_formats/osk_(file_format)) 与 [lazer 导出器](https://github.com/ppy/osu/blob/master/osu.Game/Database/LegacySkinExporter.cs) 可供参考
+
+1. 点击首页「导入 OSK」、选择「文件 → 导入 OSK…」，或将 `.osk` 拖入窗口，快捷键为 `Ctrl+Shift+O`
+2. 程序将皮肤解压到独立、持久的可编辑工作目录，导入完成后立即打开副本，原始 OSK 保持不变，最近打开记录也指向这个副本
+3. 按原有方式修改图片、音频与 Mania 配置，使用「皮肤设计」调整上隐和底部球槽
+4. 选择「文件 → 导出 OSK…」或按 `Ctrl+Shift+E`，将修改后的皮肤保存为新的 `.osk`
+5. 将新 OSK 交给 osu!stable 或 osu!lazer 导入，并在游戏内确认实际显示
+
+如果配置或视觉设计尚未保存，导出前可以选择「应用修改并导出」「仅导出已保存内容」或取消，应用视觉设计时仍然先生成新的皮肤副本，再将该副本打包
+
+导入和导出显示进度并支持取消，包内子目录、动画、音频与 lazer 的 `skininfo.json` / 控件布局 JSON 会保留，只有外包一层文件夹的包会自动去掉这层包装，缺少 `skin.ini` 的有效包会在工作副本中补充最小配置
+
+旧版 lazer 导出的零字节目录记录也会按真实子文件结构处理，重新导出后不再产生目录冲突，详见 [官方历史问题](https://github.com/ppy/osu/issues/27540)
+
+**当前预览使用传统 Standard / Mania 皮肤素材**，lazer 原生 Argon 等皮肤及其 JSON 控件布局会保留在导出的包中，但不在编辑器里完全重现，需要回到 lazer 确认效果
+
+工作目录、取消行为与兼容范围见 [OSK 使用说明](docs/OSK.md)
 
 ## Mania 皮肤测试场景
 
@@ -141,6 +163,7 @@ Standard 使用内置自动排列，目前没有鼠标 / 键盘手动判定，�
 | 功能 | 用法 |
 | --- | --- |
 | 素材工作台 | 打开或拖入皮肤文件夹，搜索、分类与查看透明图片，试听并替换音频 |
+| OSK 导入与导出 | 直接导入或拖入 stable / lazer 导出的 OSK，编辑独立副本，再导出新的皮肤包 |
 | Standard 测试与预览 | 自动展示圆圈、滑条和转盘，调整 CS / AR，单独检查判定、连击与圆圈图层 |
 | Mania 测试与预览 | 切换键数，调整 1–40 流速与演示 BPM，自动测试或键盘试玩，单独检查六档判定和连击素材 |
 | Mania 配置 | 编辑对应键数的轨道与判定配置，保存、读取历史快照或恢复备份 |
@@ -153,18 +176,20 @@ Standard 使用内置自动排列，目前没有鼠标 / 键盘手动判定，�
 
 ## 开始使用
 
-1. 运行程序，点击「打开皮肤」，选择**直接包含 `skin.ini` 的文件夹**，也可以将文件夹或 `skin.ini` 拖入窗口
+1. 运行程序，点击「打开皮肤」选择**直接包含 `skin.ini` 的文件夹**，或点击「导入 OSK」选择皮肤包，也可以将文件夹、`skin.ini` 或 `.osk` 拖入窗口
 2. 在左侧素材库搜索图片，或进入「图片管理」「音频管理」查看和替换素材
 3. 切换到 **osu!mania**，选择要修改的键数，调整流速与演示节奏，打开「判定参考线」检查位置，当前 `main` 还可选择「自动测试」或「键盘试玩」检查素材表现
 4. 点击「皮肤设计」，调整上隐、渐变、颜色与底部加高，观察即时预览
 5. 点击「保存皮肤副本」，选择新文件夹名称与保存位置
-6. 程序会打开保存后的副本，将它作为新的编辑基准，再到 osu! 中选用该副本查看实际效果
+6. 程序会打开保存后的副本，将它作为新的编辑基准，再到 osu! 中选用该副本，或导出新的 OSK 后导入游戏查看实际效果
 
 保存副本后设计参数会归零，已经写入图片的效果仍然保留，不会重复叠加同一次设计
 
 | 快捷键 | 操作 |
 | --- | --- |
 | `Ctrl+O` | 打开皮肤 |
+| `Ctrl+Shift+O` | 导入 OSK 皮肤包 |
+| `Ctrl+Shift+E` | 导出当前皮肤为新的 OSK |
 | `F5` | 重新加载当前皮肤与素材 |
 | `Ctrl+S` | 在 Mania 配置面板内保存配置 |
 | `Ctrl+R` | 在 Mania 配置面板内重新读取配置 |
@@ -189,6 +214,8 @@ Standard 使用内置自动排列，目前没有鼠标 / 键盘手动判定，�
 | 「皮肤设计」→「保存皮肤副本」 | 新皮肤文件夹 | 保留原皮肤，只为选中键数生成新素材与配置，不覆盖已有副本 |
 | 「Mania 设置」→ 保存 | 当前皮肤的 `skin.ini` | 保留首次配置备份与历史快照 |
 | 图片或音频替换、音频冲突整理 | 当前皮肤素材目录，即时写入 | 操作前备份被替换或整理的原文件 |
+| 导入 OSK | 编辑器的独立工作副本 | 保留原始 OSK，后续编辑与最近打开都使用工作副本 |
+| 导出 OSK | 选择的新 `.osk` 文件 | 保留原始皮肤包，配置与素材备份不写入新包 |
 
 视觉设计保存会复制皮肤，再生成独立的 `StageBottom` / `KeyImage` 素材，不覆盖其他键数使用的共享原图
 
@@ -218,7 +245,7 @@ Standard 使用内置自动排列，目前没有鼠标 / 键盘手动判定，�
 - 底部加高需要皮肤中存在实际的松开与按下按键图片，无法编辑游戏内置的回退图片
 - `StageBottom` 导出会保留原图案与全部动画帧，普通预览播放动画，正在编辑的上隐遮罩使用合成首帧进行预览
 - WAV / OGG / MP3 替换会保留源格式，FLAC 转换需要系统 `PATH` 中的 FFmpeg，程序未附带 FFmpeg
-- `.osk` 导入与导出目前仅提供底层 API，尚未接入主界面，使用程序时请打开已解压的皮肤文件夹
+- OSK 导入与导出保留 lazer 的 JSON 布局，当前预览与可视化配置编辑仍面向传统皮肤，不包含 lazer 原生控件布局编辑器
 
 v1.5 已通过 **137 项自动化回归测试**，并使用 Capoo 1.5 与 Bochi 圆球 v3.0 完成实际设计导出、重新加载和原文件保持不变的检查，验证范围不包含游戏内实战测试
 

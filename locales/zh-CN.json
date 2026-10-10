@@ -58,8 +58,8 @@
     "pause": "暂停",
     "resume": "继续",
     "welcome_title": "小蓝 · 皮肤工作台",
-    "welcome_description": "打开皮肤文件夹，浏览素材、调整配置，\n即时查看 Standard 与 Mania 的演示效果",
-    "welcome_hint": "支持拖入皮肤文件夹或 skin.ini  ·  Ctrl+O 打开  ·  F5 刷新",
+    "welcome_description": "打开皮肤文件夹或导入 OSK，浏览素材、调整配置，\n即时查看 Standard 与 Mania 的演示效果",
+    "welcome_hint": "支持拖入皮肤文件夹、skin.ini 或 OSK  ·  Ctrl+O 打开  ·  Ctrl+Shift+O 导入 OSK  ·  F5 刷新",
     "osu_skins": "浏览 osu! Skins",
     "preview_note": "演示预览用于检查素材与图层；不读取谱面，效果请以游戏内为准",
     "flow_speed": "流速",
@@ -223,6 +223,30 @@
     "online_cached": "显示最近获取的公告，可点击刷新获取最新内容",
     "online_failed": "在线公告暂不可用，当前版本说明仍可离线查看"
   },
+  "osk": {
+    "import": "导入 OSK…",
+    "export": "导出 OSK…",
+    "button_import": "导入 OSK",
+    "button_export": "导出 OSK",
+    "import_title": "选择 OSK 皮肤包",
+    "export_title": "导出 OSK 皮肤包",
+    "filter": "osu! 皮肤包 (*.osk)",
+    "importing": "正在导入 OSK",
+    "exporting": "正在导出 OSK",
+    "cancel": "取消",
+    "failure": "OSK 操作失败",
+    "cancelled": "OSK 操作已取消",
+    "imported_status": "已导入到可编辑副本：{path}",
+    "exported_status": "已导出 OSK：{path}",
+    "source_note": "OSK 可编辑副本 · 原始包：{name}",
+    "native_notice": "lazer 的 JSON 布局已保留，当前预览使用 Standard / Mania 的传统皮肤素材",
+    "same_source": "请选择新的 OSK 文件名，原始皮肤包会保留",
+    "unsaved_title": "导出前有未保存的修改",
+    "unsaved_message": "保存配置并应用当前设计后导出，或仅导出磁盘上已保存的内容",
+    "apply_and_export": "应用修改并导出",
+    "export_saved": "仅导出已保存内容",
+    "cancel_close": "正在取消 OSK 操作，完成后关闭"
+  },
   "updater": {
     "title": "程序更新",
     "current": "当前版本：{version}",
@@ -261,5 +285,7 @@
     "found": "发现新版本 {version}，可从「关于 → 检查程序更新」下载",
     "completed": "程序更新完成，旧版备份已保留",
     "manual_restore": "自动恢复未完成，旧程序备份：{path}"
-  }
+  },
+  "osk.kept_workspace": "副本已解包，当前皮肤未切换：{path}",
+  "osk.repaired_status": "已兼容 {count} 个旧版 lazer 目录记录，原包保持不变"
 }

@@ -58,8 +58,8 @@
     "pause": "Pause",
     "resume": "Resume",
     "welcome_title": "Your skin workspace",
-    "welcome_description": "Open a skin folder to explore assets, edit settings,\nand preview Standard and Mania in motion",
-    "welcome_hint": "Drop a skin folder or skin.ini here  ·  Ctrl+O to open  ·  F5 to reload",
+    "welcome_description": "Open a skin folder or import an OSK to explore assets, edit settings,\nand preview Standard and Mania in motion",
+    "welcome_hint": "Drop a skin folder, skin.ini or OSK here  ·  Ctrl+O to open  ·  Ctrl+Shift+O to import OSK  ·  F5 to reload",
     "osu_skins": "Browse osu! Skins",
     "preview_note": "An asset and layer preview without a beatmap; verify the final result in osu!",
     "flow_speed": "Scroll speed",
@@ -223,6 +223,30 @@
     "online_cached": "Showing recently fetched announcements; refresh to request current content",
     "online_failed": "Online announcements are unavailable; current build notes are still available offline"
   },
+  "osk": {
+    "import": "Import OSK…",
+    "export": "Export OSK…",
+    "button_import": "Import OSK",
+    "button_export": "Export OSK",
+    "import_title": "Choose an OSK skin package",
+    "export_title": "Export an OSK skin package",
+    "filter": "osu! skin package (*.osk)",
+    "importing": "Importing OSK",
+    "exporting": "Exporting OSK",
+    "cancel": "Cancel",
+    "failure": "OSK operation failed",
+    "cancelled": "OSK operation cancelled",
+    "imported_status": "Imported an editable copy: {path}",
+    "exported_status": "Exported OSK: {path}",
+    "source_note": "Editable OSK copy · Original package: {name}",
+    "native_notice": "lazer JSON layouts are preserved; this preview uses legacy Standard / Mania skin assets",
+    "same_source": "Choose a new OSK filename to keep the original package",
+    "unsaved_title": "Unsaved changes before export",
+    "unsaved_message": "Save the configuration and apply the current design, or export only the content already saved on disk",
+    "apply_and_export": "Apply changes and export",
+    "export_saved": "Export saved content only",
+    "cancel_close": "Cancelling the OSK operation before closing"
+  },
   "updater": {
     "title": "Application updates",
     "current": "Current version: {version}",
@@ -261,5 +285,7 @@
     "found": "Version {version} is available in About → Check for updates",
     "completed": "Update completed; the previous executable was kept as a backup",
     "manual_restore": "Automatic restoration did not finish; previous executable backup: {path}"
-  }
+  },
+  "osk.kept_workspace": "Extracted a working copy and kept the current skin: {path}",
+  "osk.repaired_status": "Handled {count} legacy lazer folder records and kept the original archive"
 }
