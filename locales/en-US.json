@@ -287,5 +287,15 @@
     "manual_restore": "Automatic restoration did not finish; previous executable backup: {path}"
   },
   "osk.kept_workspace": "Extracted a working copy and kept the current skin: {path}",
-  "osk.repaired_status": "Handled {count} legacy lazer folder records and kept the original archive"
+  "osk.repaired_status": "Handled {count} legacy lazer folder records and kept the original archive",
+  "updater.stable_short": "Stable",
+  "updater.retry_check": "Recheck",
+  "updater.connection_settings": "Connection settings",
+  "updater.update_now": "Update",
+  "updater.check_failed_short": "Check failed",
+  "updater.checking_short": "Checking…",
+  "updater.channel_available": "{version} · Available",
+  "updater.channel_current": "{version} · No update",
+  "updater.channel_unpublished": "No update available",
+  "updater.install_busy": "Wait for the current update operation to finish, then retry"
 }

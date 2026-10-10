@@ -119,6 +119,8 @@ class UpdateServiceTests(unittest.TestCase):
         self.errors, self.updates, self.announcements, self.ready, self.progress, self.states = [], [], [], [], [], []
         self.service.failed.connect(lambda category, message: self.errors.append((category, message)))
         self.service.update_ready.connect(self.updates.append)
+        self.channel_results = []
+        self.service.channels_ready.connect(self.channel_results.append)
         self.service.announcements_ready.connect(self.announcements.append)
         self.service.download_ready.connect(lambda path, release: self.ready.append((path, release)))
         self.service.download_progress.connect(lambda received, total: self.progress.append((received, total)))
@@ -139,8 +141,8 @@ class UpdateServiceTests(unittest.TestCase):
         APP.processEvents()
         self.temp.cleanup()
 
-    def signed(self, release=None, stable=None):
-        payload = json.dumps({"schema_version": 1, "published_at": "2026-09-29T00:00:00Z",
+    def signed(self, release=None, stable=None, published_at="2026-09-29T00:00:00Z"):
+        payload = json.dumps({"schema_version": 1, "published_at": published_at,
                               "channels": {"stable": stable, "preview": self.release if release is None else release}},
                              separators=(",", ":")).encode()
         return json.dumps({"schema_version": 1, "payload": base64.b64encode(payload).decode(),
@@ -197,6 +199,175 @@ class UpdateServiceTests(unittest.TestCase):
         self.network.latest.respond(self.signed(stable=stable))
         self.assertEqual(self.updates, [None])
         self.assertEqual(len(self.network.requests), 1)
+
+    def test_all_channels_share_one_request_and_signature_and_authorize_either_choice(self):
+        stable = dict(self.release, channel="stable", version="1.6.0", build_id="stable-r7",
+                      build_number=7, notes_id="stable-r7",
+                      url=self.release["url"].replace("preview-r6", "stable-r7"))
+        preview = dict(self.release, build_number=8, version="1.6.1-beta.1")
+        self.assertEqual(self.service.last_update_results, {})
+        self.assertTrue(self.service.check_all_updates(force=True))
+        self.assertEqual(len(self.network.requests), 1)
+        from core.update_service import verify_manifest
+        with patch("core.update_service.verify_manifest", wraps=verify_manifest) as verify:
+            self.network.latest.respond(self.signed(preview, stable))
+        verify.assert_called_once()
+        expected = {"stable": {"release": stable, "latest": stable},
+                    "preview": {"release": preview, "latest": preview}}
+        self.assertEqual(self.channel_results, [expected])
+        self.assertEqual(self.service.last_update_results, expected)
+        self.assertEqual(self.updates, [preview])
+        # The user may prefer the formal release even when Beta is newer.
+        self.assertTrue(self.service.download_release(stable))
+        self.assertEqual(self.network.requests[-1].url().toString(), stable["url"])
+        self.network.latest.respond(self.body)
+        self.assertEqual(self.ready[-1][1], stable)
+        self.service.discard_ready()
+        self.assertTrue(self.service.download_release(preview))
+        self.service.cancel_download()
+
+    def test_all_channels_distinguish_absent_formal_release_from_installed_beta(self):
+        self.service.current_build_number = 6
+        self.service.check_all_updates()
+        self.network.latest.respond(self.signed())
+        self.assertEqual(self.channel_results, [{"stable": {"release": None, "latest": None},
+                                               "preview": {"release": None, "latest": self.release}}])
+        self.assertEqual(self.updates, [None])
+        self.assertFalse(self.service.download_release(self.release))
+
+    def test_all_channels_never_offer_a_formal_build_older_than_installed_beta(self):
+        stable = dict(self.release, channel="stable", version="1.6.0", build_number=4)
+        self.service.check_all_updates()
+        self.network.latest.respond(self.signed(stable=stable))
+        self.assertEqual(self.channel_results[-1]["stable"], {"release": None, "latest": stable})
+        self.assertEqual(self.channel_results[-1]["preview"]["release"], self.release)
+        self.assertFalse(self.service.download_release(stable))
+        self.assertTrue(self.service.download_release(self.release))
+        self.service.cancel_download()
+
+    def test_all_channels_results_and_signal_are_independent_copies(self):
+        self.service.check_all_updates()
+        self.network.latest.respond(self.signed())
+        self.channel_results[-1]["preview"]["release"]["url"] = "https://example.com/injected.exe"
+        snapshot = self.service.last_update_results
+        snapshot["preview"]["latest"]["sha256"] = "0"*64
+        snapshot["stable"]["latest"] = self.release
+        self.assertEqual(self.service.last_update_results["preview"]["release"], self.release)
+        self.assertEqual(self.service.last_update_results["preview"]["latest"], self.release)
+        self.assertIsNone(self.service.last_update_results["stable"]["latest"])
+        self.assertTrue(self.service.download_release(self.release))
+        self.service.cancel_download()
+
+    def test_all_check_joins_single_channel_batch_without_duplicate_requests(self):
+        stable = dict(self.release, channel="stable", version="1.6.0", build_number=7)
+        self.service.set_source_mode("auto")
+        self.service.check_updates("stable", force=True)
+        self.service.check_all_updates(force=True)
+        self.service.check_all_updates(force=True)
+        self.assertEqual(len(self.network.requests), 3)
+        self.network.replies[0].respond(self.signed(stable=stable))
+        self.network.replies[1].respond(status=503)
+        self.network.replies[2].respond(status=503)
+        self.assertEqual(len(self.channel_results), 1)
+        self.assertEqual(self.channel_results[0]["preview"]["release"], self.release)
+        self.assertEqual(self.channel_results[0]["stable"]["release"], stable)
+        self.assertEqual(self.updates, [stable])
+
+    def test_single_channel_join_does_not_remove_an_inflight_dual_check(self):
+        stable = dict(self.release, channel="stable", version="1.6.0", build_number=7)
+        self.service.check_all_updates()
+        self.service.check_updates("preview", force=True)
+        self.assertEqual(len(self.network.requests), 1)
+        self.network.latest.respond(self.signed(stable=stable))
+        self.assertEqual(len(self.channel_results), 1)
+        self.assertEqual(self.updates, [stable])
+        # A later, separate legacy check returns to its single-channel contract.
+        self.service.check_updates("preview")
+        self.assertEqual(len(self.channel_results), 1)
+        self.assertEqual(self.updates, [stable, self.release])
+        self.assertFalse(self.service.download_release(stable))
+
+    def test_dual_check_cache_is_reverified_and_authorizes_both_without_new_network(self):
+        stable = dict(self.release, channel="stable", version="1.6.0", build_number=7)
+        self.service.check_updates("preview")
+        self.network.latest.respond(self.signed(stable=stable), headers={"ETag": '"both"'})
+        self.assertFalse(self.channel_results)
+        self.service.check_all_updates()
+        self.assertEqual(len(self.network.requests), 1)
+        self.assertTrue(self.service.last_result_from_cache["updates"])
+        self.assertEqual(self.channel_results[-1]["stable"]["release"], stable)
+        self.assertEqual(self.channel_results[-1]["preview"]["release"], self.release)
+        self.assertTrue(self.service.download_release(stable))
+        self.service.cancel_download()
+
+    def test_dual_refresh_revokes_old_authorizations_and_replaces_both_results(self):
+        stable = dict(self.release, channel="stable", version="1.6.0", build_number=7)
+        self.service.check_all_updates()
+        self.network.latest.respond(self.signed(stable=stable))
+        self.service.check_all_updates(force=True)
+        self.assertEqual(self.service.last_update_results, {})
+        self.assertFalse(self.service.download_release(stable))
+        self.assertFalse(self.service.download_release(self.release))
+        latest_stable = dict(stable, build_number=9, version="1.7.0")
+        latest_preview = dict(self.release, build_number=10, version="1.7.1-beta.1")
+        self.network.latest.respond(self.signed(latest_preview, latest_stable))
+        self.assertFalse(self.service.download_release(stable))
+        self.assertFalse(self.service.download_release(self.release))
+        self.assertEqual(self.channel_results[-1]["stable"]["release"], latest_stable)
+        self.assertTrue(self.service.download_release(latest_stable))
+        self.service.cancel_download()
+
+    def test_dual_refresh_keeps_newest_other_channel_from_a_verified_cache(self):
+        newest_stable = dict(self.release, channel="stable", version="1.7.0", build_number=9)
+        self.service.check_all_updates()
+        self.network.latest.respond(self.signed(stable=newest_stable))
+        before = (self.root/"updates.json").read_bytes()
+        self.service.set_source_mode("ghfast")
+        self.service.check_all_updates(force=True)
+        older_stable = dict(newest_stable, version="1.6.0", build_number=7)
+        older_preview = dict(self.release, version="1.6.1-beta.1", build_number=8)
+        self.network.latest.respond(self.signed(older_preview, older_stable))
+        self.assertEqual(self.channel_results[-1]["stable"]["latest"], newest_stable)
+        self.assertEqual(self.channel_results[-1]["preview"]["latest"], self.release)
+        self.assertTrue(self.service.last_result_from_cache["updates"])
+        self.assertEqual((self.root/"updates.json").read_bytes(), before)
+
+    def test_dual_refresh_uses_signed_publication_time_when_highest_build_matches(self):
+        stable = dict(self.release, channel="stable", version="1.7.0", build_number=9)
+        self.service.check_all_updates()
+        self.network.latest.respond(self.signed(stable=stable))
+        self.service.check_all_updates(force=True)
+        preview = dict(self.release, build_number=8, version="1.6.1-beta.1")
+        self.network.latest.respond(self.signed(preview, stable, "2026-09-30T00:00:00Z"))
+        self.assertEqual(self.channel_results[-1]["preview"]["release"], preview)
+        self.assertFalse(self.service.last_result_from_cache["updates"])
+
+    def test_dual_check_refuses_to_replace_active_or_prepared_download(self):
+        self.service.check_all_updates()
+        self.network.latest.respond(self.signed())
+        self.service.download_release(self.release)
+        requests = len(self.network.requests)
+        self.assertFalse(self.service.check_all_updates(force=True))
+        self.assertEqual(len(self.network.requests), requests)
+        self.network.latest.respond(self.body)
+        self.assertFalse(self.service.check_all_updates(force=True))
+        self.assertEqual(len(self.network.requests), requests)
+        self.assertTrue(self.service.ready_path)
+
+    def test_dual_check_never_authorizes_unsigned_or_expired_failed_results(self):
+        self.service.check_all_updates()
+        self.network.latest.respond(self.signed())
+        cache_path = self.root/"updates.json"
+        cached = json.loads(cache_path.read_text())
+        cached["fetched_at"] -= 13*60*60
+        cache_path.write_text(json.dumps(cached))
+        self.service.check_all_updates()
+        self.network.latest.respond(b"unsigned manifest")
+        self.assertEqual(len(self.channel_results), 1)
+        self.assertEqual(self.service.last_update_results, {})
+        self.assertFalse(self.service.download_release(self.release))
+        self.service.close()
+        self.assertFalse(self.service.check_all_updates(force=True))
 
     def test_cache_is_reverified_etag_supported_and_force_bypasses_ttl(self):
         self.authorize()

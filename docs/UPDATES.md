@@ -2,19 +2,23 @@
 
 本文说明当前更新机制及发布顺序，不表示文中的示例版本已经发布
 
-当前源码身份为 `VERSION = "1.6.0-preview.8"`、`BUILD_ID = "preview-r8"`、`BUILD_NUMBER = 8`、`CHANNEL = "preview"`，已发布 v1.5 的链接保留在 README
+当前源码身份为 `VERSION = "1.6.0-preview.9"`、`BUILD_ID = "preview-r9"`、`BUILD_NUMBER = 9`、`CHANNEL = "preview"`，界面将 `preview` 显示为 Beta，将 `stable` 显示为正式版
 
 ## 用户如何更新
 
-v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并运行一次 v1.6.0-preview.8 或更新的 Windows EXE，公告不能给旧版远程安装更新功能
+v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并运行一次支持更新的 Windows EXE，公告不能给旧版远程安装更新功能
 
 预览 r5 已有更新入口，但下载跳转编码存在兼容问题，也需要手动升级到 r6 一次
 
-之后使用「关于」→「检查程序更新」选择通道、检查、下载并重启更新，后台自动检查可以关闭，检查到新版本不会自行安装
+从 r9 开始，点击「关于」→「检查程序更新」立即检查同一份签名清单中的 Beta 与正式版，两行分别显示检查结果、当前可更新版本和「更新」按钮，无需选择通道或再点击检查
 
-连接方式默认「自动选择」，可在更新窗口固定为 GitHub 直连、GHFast 或 GH-Proxy，选择保存在 `updates/source_mode`，在检查、下载或安装准备期间不可切换，当前线路文本显示实际获得有效内容的域名
+点击有新版的行内「更新」后先处理未保存的配置与皮肤设计，再自动下载、校验并重启完成安装，不再设置独立的下载与重启按钮，进度与取消在同一个紧凑窗口中显示，后台自动检查只提示，不自行安装
 
-「启动时显示新公告」控制公告是否自动弹出，「启动后自动检查公告和程序更新」控制后台联网检查，两项设置独立，关闭后仍可从菜单手动操作
+当前签名清单的正式版槽为 `null`，正式版行显示「暂无更新」，这不代表 v1.5 已纳入签名更新机制，也不能将当前 Beta 标记为正式版最新版
+
+连接方式默认「自动选择」，可在默认折叠的「连接设置」中固定为 GitHub 直连、GHFast 或 GH-Proxy，选择保存在 `updates/source_mode`，在检查、下载或安装准备期间不可切换，当前线路文本显示实际获得有效内容的域名
+
+「启动时显示新公告」控制公告是否自动弹出，「连接设置」中的启动自动检查控制后台联网检查，两项设置独立，关闭后仍可从菜单手动操作
 
 从源码运行时只提供检查和下载，更新流程不会将 `python.exe` 或源码目录当作安装目标
 
@@ -23,7 +27,7 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 | 文件或地址 | 用途 |
 | --- | --- |
 | `core/app_version.py` | 当前版本、公告 ID、构建号、默认通道与平台 |
-| `assets/updates.json` | 随程序打包的当前构建离线说明，当前仅包含 r8 |
+| `assets/updates.json` | 随程序打包的当前构建离线说明，当前仅包含 r9 |
 | `updates/announcements.json` | 完整中英双语公告历史，最新记录排在前面 |
 | `updates/manifest.json` | 经过 Ed25519 签名的稳定版和预览版更新指针 |
 | `core/update_public_key.py` | 程序内置的 Ed25519 公钥，可提交到源码仓库 |
@@ -66,7 +70,7 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 
 `BUILD_NUMBER` 是全渠道统一的递增序号，每次发布都应大于正式版和开发预览中所有已经发布的构建号，不能在切换通道后重新从 1 开始，也不能只递增版本字符串
 
-例如当前预览构建号为 8，下一个正式版如果希望当前预览用户能够升级，必须使用大于 8 的构建号，客户端不会因为版本标签看起来更高而安装相同或更低的构建号
+例如当前 Beta 构建号为 9，下一个正式版如果希望当前 Beta 用户能够升级，必须使用大于 9 的构建号，客户端不会因为版本标签看起来更高而安装相同或更低的构建号
 
 合并旧清单时，发布工具会比较两个通道的最大构建号，拒绝相同或更低的构建号，维护者还需确保源码中的构建身份与最终 EXE 一致
 
@@ -110,18 +114,18 @@ py -m venv .venv
 
 不要先发布指向尚未上传文件的新清单，也不要手动修改已经签名的 Base64 载荷，发布工具本身不执行上传或 Git 操作
 
-下面以发布当前 r8 构建为例，示例不会展示或创建私钥，版本和构建号必须改成实际待发布构建的值
+下面以发布当前 r9 构建为例，示例不会展示或创建私钥，版本和构建号必须改成实际待发布构建的值
 
 ```powershell
 $signingKey = Join-Path $env:LOCALAPPDATA 'OsuSkinEditor\Publisher\update-signing-key.pem'
-$releaseExe = 'work\release\OsuSkinEditor-v1.6.0-preview.8-windows-x64.exe'
+$releaseExe = 'work\release\OsuSkinEditor-v1.6.0-preview.9-windows-x64.exe'
 $manifestArgs = @(
     '--exe', $releaseExe,
-    '--version', '1.6.0-preview.8',
-    '--build-id', 'preview-r8',
-    '--build-number', '8',
+    '--version', '1.6.0-preview.9',
+    '--build-id', 'preview-r9',
+    '--build-number', '9',
     '--channel', 'preview',
-    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.8/OsuSkinEditor-v1.6.0-preview.8-windows-x64.exe',
+    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.9/OsuSkinEditor-v1.6.0-preview.9-windows-x64.exe',
     '--private-key', $signingKey,
     '--output', 'updates\manifest.json'
 )
@@ -137,7 +141,7 @@ if (Test-Path -LiteralPath 'updates\manifest.json') {
 
 ## 替换、备份与失败恢复
 
-用户选择「重启并更新」后，更新流程重新核对下载信息，启动独立助手，助手只处理本次指定的主程序及关联进程，不扫描或终止其他同名程序
+用户点击「更新」且下载校验完成后，更新流程重新核对下载信息，自动启动独立助手，助手只处理本次指定的主程序及关联进程，不扫描或终止其他同名程序
 
 助手先确认目标目录可以写入，再等待主程序退出，将旧 EXE 备份到同目录的 `<程序名>.exe.backup-<标识>.bak`，校验备份后替换原位置并启动新版
 

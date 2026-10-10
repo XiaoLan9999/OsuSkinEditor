@@ -4,19 +4,7 @@
 
 深蓝与冰青科技风界面，支持中文 / English，适合修改已有皮肤、调试判定图像与制作自己的 Mania 布局
 
-**[下载已发布的 v1.5 Windows x64 版](https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.5/OsuSkinEditor-v1.5-windows-x64.exe)** · [v1.5 发布说明](https://github.com/XiaoLan9999/OsuSkinEditor/releases/tag/v1.5) · [v1.5 源码](https://github.com/XiaoLan9999/OsuSkinEditor/archive/refs/tags/v1.5.zip)
-
-Windows 版下载后直接运行，无需安装 Python
-
-**[下载 v1.6.0-preview.8 开发预览](https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.8/OsuSkinEditor-v1.6.0-preview.8-windows-x64.exe)** · [开发预览发布说明](https://github.com/XiaoLan9999/OsuSkinEditor/releases/tag/v1.6.0-preview.8)
-
-原站打不开时可使用 [GHFast 备用下载](https://ghfast.top/https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.8/OsuSkinEditor-v1.6.0-preview.8-windows-x64.exe) 或 [GH-Proxy 备用下载](https://gh-proxy.org/https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0-preview.8/OsuSkinEditor-v1.6.0-preview.8-windows-x64.exe)，预览 r7 可自动选择线路升级，r6 直连不可用时请先手动下载新版并替换一次
-
-**开发预览包含** Mania 键盘试玩与舞台侧图、Standard 自动测试、判定与连击素材检查，以及独立预览窗口，这些功能不在旧版 v1.5 程序中
-
-当前开发预览为 **1.6.0-preview.8 / preview-r8，构建号 8**，新增 OSK 导入、可编辑工作副本与 OSK 导出，保留在线公告与多个下载线路自动检测
-
-从 **v1.5 或预览 r1–r5** 升级时，请首次手动下载并运行上面的开发预览，之后可通过程序内的更新入口升级
+当前版本为 **1.6.0-preview.9（Beta）**，支持 OSK 导入与导出、Mania 键盘试玩、Standard 自动测试，以及在线公告和简洁的程序更新入口
 
 <details>
 <summary>查看内置更新公告</summary>
@@ -27,31 +15,19 @@ Windows 版下载后直接运行，无需安装 Python
 
 ## 在线公告与程序更新
 
-「关于」→「更新公告」将**当前版本说明**与**在线公告历史**分开显示，当前 r8 说明随程序打包，离线仍可阅读，历史公告从项目仓库获取，网络不可用时保留本地说明与可用缓存
+「关于」→「更新公告」将**当前版本说明**与**在线公告历史**分开显示，当前版本说明随程序打包，离线仍可阅读，网络不可用时保留本地说明与可用缓存
 
 新公告首次显示后记住已读状态，可取消「启动时显示新公告」，之后仍能从菜单手动查看
 
-安装支持更新的新版后，可在「关于」→「检查程序更新」选择正式版或开发预览通道，依次执行「检查程序更新」「下载新版」「重启并更新」，当前源码默认使用开发预览通道
+点击「关于」→「检查程序更新」立即同时检查 **Beta** 与**正式版**，两行分别显示结果，有新版时点击对应的「更新」即可自动完成更新并重启，无需选择通道
 
-连接方式默认「自动选择」，同时请求 GitHub 原站、[GHFast](https://ghfast.top/) 与 [GH-Proxy](https://gh-proxy.com/docs/quick-start) 的实际公告或签名清单，只有内容通过检查的线路才算可用，不会仅凭域名可以连接就判定成功，版本检查在收到有效结果后短暂等待其他线路，优先使用最新的有效签名信息
+![程序更新弹窗示意](docs/images/software-update.png)
 
-也可以固定选择 GitHub 直连、GHFast 或 GH-Proxy，程序记住选择并显示当前线路，自动模式下载优先尝试近期成功的线路，连接失败或校验失败时自动回退，切换线路后从头下载并重新计数，缓存的 ETag 只用于取得它的原线路
+更新前会处理未保存的修改，下载可取消，更新包通过签名与文件校验后才会替换程序，程序同目录保留旧版备份，新版启动失败时尝试恢复旧版
 
-下载前验证更新清单的 **Ed25519 签名**，下载后验证文件大小与 **SHA-256**，校验通过后才允许替换当前 Windows EXE，更新助手会在程序同目录保留旧版备份，新程序启动失败时尝试恢复旧版，皮肤文件与编辑器设置不参与替换
+网络连接与启动自动检查位于默认折叠的「连接设置」，默认自动检测 GitHub、GHFast 和 GH-Proxy，失败时切换线路，也可固定使用指定来源，公共线路的可用性会随网络环境变化
 
-加速线路只改变传输地址，签名清单中的下载地址始终指向本项目 GitHub Release，公共加速服务由第三方运营，线路选择不代表可用性或国内访问速度承诺，后续可加入维护者自己的国内 HTTPS 镜像，并继续使用相同的签名与文件校验
-
-可以关闭「启动后自动检查公告和程序更新」，手动检查入口仍可使用，自动检查不会自行安装更新
-
-从源码运行时可以检查和下载新版，但不会覆盖 Python 解释器或源码目录，原位置替换仅适用于 Windows 打包程序
-
-![程序更新窗口](docs/images/software-update.png)
-
-*界面示例中的后续版本号不表示已经发布，只有实际下载校验完成后才会启用重启更新*
-
-公告来自仓库的 [announcements.json](https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/announcements.json)，签名更新清单来自 [manifest.json](https://raw.githubusercontent.com/XiaoLan9999/OsuSkinEditor/main/updates/manifest.json)，当前没有使用 GitHub Pages
-
-构建与发布维护步骤见 [更新发布说明](docs/UPDATES.md)
+自动检查只提示新版本，安装由用户主动点击「更新」，不会安装相同或较低构建号的版本，正式版暂未提供更新包时会显示暂无可更新版本
 
 ## OSK 与 osu!lazer 皮肤
 
@@ -247,8 +223,6 @@ Standard 使用内置自动排列，目前没有鼠标 / 键盘手动判定，�
 - WAV / OGG / MP3 替换会保留源格式，FLAC 转换需要系统 `PATH` 中的 FFmpeg，程序未附带 FFmpeg
 - OSK 导入与导出保留 lazer 的 JSON 布局，当前预览与可视化配置编辑仍面向传统皮肤，不包含 lazer 原生控件布局编辑器
 
-v1.5 已通过 **137 项自动化回归测试**，并使用 Capoo 1.5 与 Bochi 圆球 v3.0 完成实际设计导出、重新加载和原文件保持不变的检查，验证范围不包含游戏内实战测试
-
 <details>
 <summary>查看启动界面</summary>
 
@@ -256,41 +230,9 @@ v1.5 已通过 **137 项自动化回归测试**，并使用 Capoo 1.5 与 Bochi 
 
 </details>
 
-## 从源码运行
-
-`assets/updates.json` 仅保存当前构建的离线说明，在线历史位于 `updates/announcements.json`，构建身份统一维护在 `core/app_version.py`，更新清单的公钥位于 `core/update_public_key.py`
-
-需要 Python 3.10 或更新版本，界面使用 PySide6，图像处理使用 Pillow，更新签名校验使用 cryptography
-
-```powershell
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe app.py
-```
-
-运行回归测试
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
-
-在 Windows 上打包单文件程序
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install pyinstaller
-.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --distpath dist/updater OsuSkinUpdater.spec
-.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean OsuSkinEditor.spec
-```
-
-构建结果位于 `dist/OsuSkinEditor.exe`
-
-请先构建更新助手，主程序会将 `dist/updater/OsuSkinUpdater.exe` 一起打包，如果助手位于其他位置，可设置 `OSUSKIN_UPDATER_PATH` 指向该 EXE 后再构建主程序
-
-`requirements-lock.txt` 记录本次 Windows 构建使用的依赖版本，复现构建环境可使用 Python 3.13，并将安装依赖的命令改为 `pip install -r requirements-lock.txt`
-
-打包规格会在构建进程内隔离无关 SDK 的 `PATH`，避免外部动态库混入，不修改系统环境变量
-
 ## 反馈与参考
+
+作者：[小蓝 / XiaoLan9999](https://github.com/XiaoLan9999)
 
 遇到问题可以[提交 Issue](https://github.com/XiaoLan9999/OsuSkinEditor/issues)，请附上程序版本、皮肤名称、键数、复现步骤，以及编辑器与游戏内的对照截图
 

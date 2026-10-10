@@ -33,6 +33,7 @@ RELEASE = {"version": "1.6.0-preview.6", "build_id": "preview-r6", "build_number
 class FakeUpdateService(QObject):
     announcements_ready = Signal(object)
     update_ready = Signal(object)
+    channels_ready = Signal(object)
     failed = Signal(str, str)
     download_progress = Signal(int, int)
     download_ready = Signal(str, object)
@@ -46,6 +47,7 @@ class FakeUpdateService(QObject):
         self.downloading = False
         self.state = "idle"
         self.last_result_from_cache = {"announcements": False, "updates": False}
+        self.last_update_results = {}
         self.source_mode = "auto"
         self.last_source = {}
         self.source_modes = []
@@ -58,7 +60,7 @@ class FakeUpdateService(QObject):
     def set_source_mode(self, mode):
         if mode not in ("auto", "github", "ghfast", "ghproxy"):
             return False
-        if self.downloading or self.state == "checking":
+        if self.downloading or self.state == "checking" or self.ready_path:
             return mode == self.source_mode
         self.source_mode = mode
         self.source_modes.append(mode)
@@ -74,10 +76,27 @@ class FakeUpdateService(QObject):
         self.state_changed.emit(self.state)
         return True
 
-    def checked(self, release):
-        self.state = "idle"
+    def check_all_updates(self, force=False):
+        self.checks.append(("all", force))
+        self.last_update_results = {}
+        self.state = "checking"
         self.state_changed.emit(self.state)
-        self.update_ready.emit(deepcopy(release))
+        return True
+
+    def checked(self, release):
+        results = {"preview": {"release": None, "latest": None},
+                   "stable": {"release": None, "latest": None}}
+        if release:
+            results[release["channel"]] = {"release": deepcopy(release), "latest": deepcopy(release)}
+        self.checked_channels(results)
+
+    def checked_channels(self, results):
+        self.state = "idle"
+        self.last_update_results = deepcopy(results)
+        self.state_changed.emit(self.state)
+        self.channels_ready.emit(deepcopy(results))
+        available = [item["release"] for item in results.values() if item.get("release")]
+        self.update_ready.emit(deepcopy(max(available, key=lambda item: item["build_number"], default=None)))
 
     def download_release(self, release):
         self.downloads.append(deepcopy(release))
@@ -161,39 +180,157 @@ class SoftwareUpdateDialogTests(unittest.TestCase):
         self.dialogs.append(dialog)
         return dialog
 
-    def test_explicit_check_available_download_progress_and_ready_controls(self):
+    def connect_update(self, dialog):
+        requests, installs = [], []
+        dialog.update_requested.connect(lambda release: (requests.append(release), dialog.begin_update(release)))
+        dialog.install_requested.connect(lambda: installs.append(True))
+        return requests, installs
+
+    def test_both_channel_results_and_compact_default_layout_have_no_channel_selector(self):
         dialog = self.dialog()
-        self.assertFalse(dialog.download_button.isEnabled())
-        self.assertFalse(dialog.install_button.isEnabled())
-        dialog.check_button.click()
-        self.assertEqual(self.service.checks, [("preview", True)])
-        self.assertFalse(dialog.channel.isEnabled())
-        self.assertFalse(dialog.source_mode.isEnabled())
+        dialog.check()
+        self.assertEqual(self.service.checks, [("all", True)])
+        self.assertFalse(hasattr(dialog, "channel"))
+        self.assertFalse(hasattr(dialog, "download_button"))
+        self.assertFalse(hasattr(dialog, "install_button"))
+        self.assertTrue(dialog.advanced_panel.isHidden())
+        self.assertFalse(dialog.check_button.isVisible())
+        self.assertFalse(dialog.rows["preview"].button.isEnabled())
+        stable = dict(RELEASE, version="1.5", channel="stable", build_number=1)
+        self.service.checked_channels({"stable": {"release": None, "latest": stable},
+                                       "preview": {"release": RELEASE, "latest": RELEASE}})
+        self.assertIn(RELEASE["version"], dialog.rows["preview"].status.text())
+        self.assertIn("无更新", dialog.rows["stable"].status.text())
+        self.assertFalse(dialog.rows["stable"].button.isEnabled())
+        self.assertTrue(dialog.rows["preview"].button.isEnabled())
+        self.assertLessEqual(dialog.width(), 480)
+        self.assertLessEqual(dialog.height(), 300)
+        self.assertEqual(self.settings.value("updates/channel", "", str), "preview")
+
+    def test_one_click_downloads_and_automatically_requests_install_exactly_once(self):
+        dialog = self.dialog()
+        requests, installs = self.connect_update(dialog)
         self.service.checked(RELEASE)
-        self.assertTrue(dialog.download_button.isEnabled())
-        self.assertIn(RELEASE["version"], dialog.release_info.text())
-        dialog.download_button.click()
+        dialog.rows["preview"].button.click()
+        self.assertEqual(requests, [RELEASE])
         self.assertEqual(self.service.downloads, [RELEASE])
-        self.assertFalse(dialog.check_button.isEnabled())
+        self.assertTrue(dialog.auto_install_pending)
+        self.assertFalse(dialog.rows["preview"].button.isEnabled())
         self.assertFalse(dialog.source_mode.isEnabled())
         self.service.download_progress.emit(512*1024, 1024*1024)
         self.assertEqual(dialog.progress.value(), 50)
         self.service.downloaded(self.root / "payload.exe")
-        self.assertTrue(dialog.install_button.isEnabled())
-        self.assertFalse(dialog.download_button.isEnabled())
-        installs = []
-        dialog.install_requested.connect(lambda: installs.append(True))
-        dialog.install_button.click()
+        self.assertEqual(installs, [True])
+        self.service.download_ready.emit(self.service.ready_path, RELEASE)
         self.assertEqual(installs, [True])
 
-    def test_source_mode_allows_check_but_never_offers_in_place_install(self):
-        dialog = self.dialog(can_install=False)
+    def test_stable_and_beta_buttons_select_their_own_verified_release(self):
+        dialog = self.dialog()
+        selected = []
+        dialog.update_requested.connect(selected.append)
+        stable = dict(RELEASE, version="1.6.0", build_number=7, channel="stable")
+        self.service.checked_channels({"stable": {"release": stable, "latest": stable},
+                                       "preview": {"release": RELEASE, "latest": RELEASE}})
+        dialog.rows["stable"].button.click()
+        dialog.rows["preview"].button.click()
+        self.assertEqual(selected, [stable, RELEASE])
+        self.assertFalse(self.service.downloads)
+
+    def test_cancel_download_disarms_late_completion_and_allows_explicit_retry(self):
+        dialog = self.dialog()
+        _requests, installs = self.connect_update(dialog)
+        self.service.checked(RELEASE)
+        dialog.rows["preview"].button.click()
+        dialog.cancel_button.click()
+        self.assertEqual(self.service.cancelled_downloads, 1)
+        self.assertFalse(dialog.auto_install_pending)
+        self.service.downloaded(self.root / "late-payload.exe")
+        self.assertEqual(installs, [])
+        self.assertTrue(dialog.rows["preview"].button.isEnabled())
+        dialog.rows["preview"].button.click()
+        self.assertEqual(installs, [True])
+        self.assertEqual(self.service.downloads, [RELEASE])
+
+    def test_close_and_escape_cancel_download_and_cannot_auto_install_late_result(self):
+        for method in ("close", "reject"):
+            dialog = self.dialog()
+            _requests, installs = self.connect_update(dialog)
+            self.service.checked(RELEASE)
+            dialog.rows["preview"].button.click()
+            before = self.service.cancelled_downloads
+            getattr(dialog, method)()
+            self.assertEqual(self.service.cancelled_downloads, before+1)
+            self.assertFalse(dialog.auto_install_pending)
+            self.service.downloaded(self.root / (method+".exe"))
+            self.assertEqual(installs, [])
+            self.assertFalse(dialog.begin_update(RELEASE))
+            self.service.discard_ready()
+
+    def test_ready_retry_after_helper_failure_reuses_payload_without_redownload(self):
+        dialog = self.dialog()
+        _requests, installs = self.connect_update(dialog)
+        self.service.checked(RELEASE)
+        dialog.rows["preview"].button.click()
+        self.service.downloaded(self.root / "payload.exe")
+        dialog.set_preparing(True)
+        self.assertFalse(dialog.rows["preview"].button.isEnabled())
+        dialog.set_preparing(False, "Target is not writable")
+        self.assertFalse(dialog.auto_install_pending)
+        self.assertIn("Target", dialog.status.text())
+        dialog.rows["preview"].button.click()
+        self.assertEqual(self.service.downloads, [RELEASE])
+        self.assertEqual(installs, [True, True])
+
+    def test_existing_ready_payload_restores_both_results_without_automatic_install(self):
         self.service.checked(RELEASE)
         self.service.downloaded(self.root / "payload.exe")
-        self.assertFalse(dialog.install_button.isEnabled())
-        self.assertIn(i18n.t("updater.source_mode"), dialog.help_text.text())
+        dialog = self.dialog()
+        _requests, installs = self.connect_update(dialog)
+        self.assertEqual(dialog.release, RELEASE)
+        self.assertTrue(dialog.rows["preview"].button.isEnabled())
+        self.assertIn("暂无", dialog.rows["stable"].status.text())
+        self.assertFalse(dialog.auto_install_pending)
+        self.assertEqual(installs, [])
+        dialog.rows["preview"].button.click()
+        self.assertEqual(installs, [True])
+        self.assertEqual(self.service.downloads, [])
 
-    def test_error_does_not_claim_up_to_date_and_update_text_is_plain(self):
+    def test_source_run_downloads_but_never_requests_in_place_install(self):
+        dialog = self.dialog(can_install=False)
+        _requests, installs = self.connect_update(dialog)
+        self.service.checked(RELEASE)
+        dialog.rows["preview"].button.click()
+        self.service.downloaded(self.root / "payload.exe")
+        self.assertEqual(self.service.downloads, [RELEASE])
+        self.assertEqual(installs, [])
+        self.assertFalse(dialog.auto_install_pending)
+        self.assertIn(i18n.t("updater.source_mode"), dialog.status.text())
+
+    def test_preparing_cancel_close_and_escape_request_handshake_cancellation(self):
+        dialog = self.dialog()
+        self.service.downloaded(self.root / "payload.exe")
+        cancelled = []
+        dialog.cancel_install_requested.connect(lambda: cancelled.append(True))
+        dialog.set_preparing(True)
+        self.assertFalse(dialog.rows["preview"].button.isEnabled())
+        self.assertFalse(dialog.source_mode.isEnabled())
+        dialog.cancel_button.click()
+        self.assertEqual(cancelled, [True])
+        self.assertEqual(self.service.discarded, 0)
+        dialog.close()
+        dialog.reject()
+        self.assertGreaterEqual(len(cancelled), 3)
+
+    def test_committed_close_does_not_cancel_installation(self):
+        dialog = self.dialog()
+        cancelled = []
+        dialog.cancel_install_requested.connect(lambda: cancelled.append(True))
+        dialog.set_preparing(True)
+        dialog.committed = True
+        dialog.close()
+        self.assertEqual(cancelled, [])
+
+    def test_error_does_not_claim_up_to_date_and_every_result_is_plain_text(self):
         dialog = self.dialog()
         dialog.check()
         self.service.state = "idle"
@@ -201,72 +338,53 @@ class SoftwareUpdateDialogTests(unittest.TestCase):
         self.assertIn("TLS", dialog.status.text())
         self.assertNotEqual(dialog.status.text(), i18n.t("updater.up_to_date"))
         self.assertEqual(dialog.status.textFormat(), Qt.PlainText)
-        self.assertEqual(dialog.release_info.textFormat(), Qt.PlainText)
+        self.assertFalse(dialog.rows["preview"].button.isEnabled())
+        self.assertTrue(dialog.check_button.isVisible())
+        for row in dialog.rows.values():
+            self.assertEqual(row.status.textFormat(), Qt.PlainText)
+            self.assertIn("检查失败", row.status.text())
         before = dialog.status.text()
         self.service.failed.emit("announcements", "Separate feed failed")
         self.assertEqual(dialog.status.text(), before)
 
-    def test_failed_refresh_does_not_reenable_download_for_previous_release(self):
+    def test_failed_refresh_clears_previous_offer(self):
         dialog = self.dialog()
         self.service.checked(RELEASE)
-        self.assertTrue(dialog.download_button.isEnabled())
+        self.assertTrue(dialog.rows["preview"].button.isEnabled())
         dialog.check()
         self.service.state = "idle"
         self.service.failed.emit("updates", "Network unavailable")
-        self.assertFalse(dialog.download_button.isEnabled())
+        self.assertFalse(dialog.rows["preview"].button.isEnabled())
+        self.assertIsNone(dialog.rows["preview"].release)
         self.assertIsNone(dialog.release)
 
-    def test_cancel_download_and_prepared_payload_use_distinct_service_operations(self):
+    def test_failed_download_disarms_automatic_installation(self):
         dialog = self.dialog()
+        _requests, installs = self.connect_update(dialog)
         self.service.checked(RELEASE)
-        dialog.download_button.click()
-        dialog.cancel_button.click()
-        self.assertEqual(self.service.cancelled_downloads, 1)
-        payload = self.root / "payload.exe"
-        payload.write_bytes(b"preserved verified bytes")
-        self.service.downloaded(payload)
-        dialog.cancel_button.click()
-        self.assertEqual(self.service.discarded, 1)
-        self.assertTrue(payload.exists())
-        self.assertFalse(dialog.install_button.isEnabled())
+        dialog.rows["preview"].button.click()
+        self.service.downloading = False
+        self.service.state = "idle"
+        self.service.failed.emit("download", "Incomplete transfer")
+        self.service.downloaded(self.root / "unexpected.exe")
+        self.assertEqual(installs, [])
+        self.assertFalse(dialog.auto_install_pending)
 
-    def test_preparing_close_and_cancel_only_request_handshake_cancellation(self):
-        dialog = self.dialog()
-        self.service.downloaded(self.root / "payload.exe")
-        cancelled = []
-        dialog.cancel_install_requested.connect(lambda: cancelled.append(True))
-        dialog.set_preparing(True)
-        self.assertFalse(dialog.install_button.isEnabled())
-        self.assertFalse(dialog.channel.isEnabled())
-        self.assertFalse(dialog.source_mode.isEnabled())
-        dialog.cancel_button.click()
-        self.assertEqual(cancelled, [True])
-        self.assertEqual(self.service.discarded, 0)
-        dialog.close()
-        self.assertGreaterEqual(len(cancelled), 2)
-
-    def test_existing_ready_payload_restores_dialog_state_and_preferences(self):
-        self.service.downloaded(self.root / "payload.exe")
-        dialog = self.dialog()
-        self.assertEqual(dialog.release, RELEASE)
-        self.assertTrue(dialog.install_button.isEnabled())
-        dialog.auto_check.setChecked(False)
-        self.assertFalse(self.settings.value("updates/auto_check", True, bool))
-        dialog.retranslate()
-        self.assertEqual(dialog.release, RELEASE)
-
-    def test_connection_preference_restores_and_changes_trigger_fresh_check(self):
+    def test_advanced_connection_preferences_restore_and_trigger_fresh_dual_check(self):
         self.settings.setValue("updates/source_mode", "ghfast")
         dialog = self.dialog()
         self.assertEqual(dialog.source_mode.currentData(), "ghfast")
         self.assertEqual(self.service.source_mode, "ghfast")
+        dialog.advanced_button.click()
+        self.assertTrue(dialog.advanced_panel.isVisible())
         self.service.checked(RELEASE)
         dialog.source_mode.setCurrentIndex(dialog.source_mode.findData("ghproxy"))
         self.assertEqual(self.settings.value("updates/source_mode", "", str), "ghproxy")
-        self.assertEqual(self.service.source_mode, "ghproxy")
-        self.assertEqual(self.service.checks, [("preview", True)])
-        self.assertIsNone(dialog.release)
+        self.assertEqual(self.service.checks, [("all", True)])
+        self.assertIsNone(dialog.rows["preview"].release)
         self.assertFalse(dialog.source_mode.isEnabled())
+        dialog.auto_check.setChecked(False)
+        self.assertFalse(self.settings.value("updates/auto_check", True, bool))
 
     def test_invalid_connection_preference_returns_to_auto(self):
         self.settings.setValue("updates/source_mode", "unknown-mirror")
@@ -274,17 +392,12 @@ class SoftwareUpdateDialogTests(unittest.TestCase):
         self.assertEqual(dialog.source_mode.currentData(), "auto")
         self.assertEqual(self.settings.value("updates/source_mode", "", str), "auto")
 
-    def test_current_route_updates_on_fallback_and_stays_plain_across_language_change(self):
+    def test_current_route_and_two_results_survive_language_change(self):
         self.service.last_source["updates"] = "raw.githubusercontent.com"
         dialog = self.dialog()
+        self.service.checked(RELEASE)
         self.assertIn("raw.githubusercontent.com", dialog.current_source.text())
-        self.service.source_changed.emit("download", "ghfast.top")
-        self.assertIn("ghfast.top", dialog.current_source.text())
-        self.service.download_progress.emit(800*1024, 1024*1024)
         self.service.source_changed.emit("download", "gh-proxy.org")
-        self.service.download_progress.emit(0, 1024*1024)
-        self.assertIn("gh-proxy.org", dialog.current_source.text())
-        self.assertEqual(dialog.progress.value(), 0)
         self.service.source_changed.emit("announcements", "ghfast.top")
         self.assertIn("gh-proxy.org", dialog.current_source.text())
         i18n.load_language("en-US")
@@ -292,15 +405,18 @@ class SoftwareUpdateDialogTests(unittest.TestCase):
         self.assertIn("gh-proxy.org", dialog.current_source.text())
         self.assertIn("Download", dialog.current_source.text())
         self.assertEqual(dialog.current_source.textFormat(), Qt.PlainText)
+        self.assertEqual(dialog.rows["stable"].title.text(), "Stable")
+        self.assertEqual(dialog.rows["preview"].title.text(), "Beta")
+        self.assertIn("Available", dialog.rows["preview"].status.text())
+        self.assertEqual(dialog.rows["preview"].button.text(), "Update")
 
     def test_connection_change_rejected_during_background_check_restores_choice(self):
         dialog = self.dialog()
-        self.service.check_updates()
+        self.service.check_all_updates()
         dialog.source_mode.setCurrentIndex(dialog.source_mode.findData("github"))
         self.assertEqual(dialog.source_mode.currentData(), "auto")
         self.assertEqual(self.service.source_mode, "auto")
         self.assertEqual(self.settings.value("updates/source_mode", "", str), "auto")
-
 
 class UpdateInstallControllerTests(unittest.TestCase):
     def setUp(self):

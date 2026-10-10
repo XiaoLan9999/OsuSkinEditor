@@ -70,16 +70,18 @@ class OnlineAnnouncementTests(unittest.TestCase):
         self.dialog.source_tabs.setCurrentIndex(0)
         self.assertEqual(self.dialog.entries,self.local)
 
-    def test_auto_notice_respects_channel_and_selects_the_new_remote_entry(self):
+    def test_auto_notice_respects_current_build_channel_and_ignores_old_selector_setting(self):
         with patch('ui.main_window.UpdateService',FakeUpdateService):
             window=MainWindow()
         window.show()
         APP.processEvents()
-        window.settings.setValue('updates/channel','stable')
-        window._online_notes_ready((self.remote,*self.local))
-        self.assertIsNone(window._pending_online_notice)
         window.settings.setValue('updates/channel','preview')
-        window._online_notes_ready((self.remote,*self.local))
+        with patch('ui.main_window.CHANNEL','stable'):
+            window._online_notes_ready((self.remote,*self.local))
+        self.assertIsNone(window._pending_online_notice)
+        window.settings.setValue('updates/channel','stable')
+        with patch('ui.main_window.CHANNEL','preview'):
+            window._online_notes_ready((self.remote,*self.local))
         self.assertEqual(window._pending_online_notice,self.remote['id'])
         window._maybe_show_update_announcement()
         viewer=window._update_dialog

@@ -109,7 +109,7 @@ class SkinArchiveWorkflow:
                 temporary.unlink(missing_ok=True)
 
     def _sync_archive_actions(self):
-        busy = self._archive_controller.busy or self._preparing_update
+        busy = self._archive_controller.busy or self._preparing_update or self._update_edit_locked
         self.act_import_osk.setEnabled(not busy)
         self.act_export_osk.setEnabled(self.skin is not None and not busy)
         self.btn_import_osk.setEnabled(not busy)
@@ -130,14 +130,14 @@ class SkinArchiveWorkflow:
         self.archive_note.setVisible(bool(notes))
 
     def on_import_osk(self):
-        if self._archive_controller.busy or self._preparing_update:
+        if self._archive_controller.busy or self._preparing_update or self._update_edit_locked:
             return False
         start = self.settings.value("paths/last_osk", self._start_dir_for_dialog(), str)
         path, _ = QFileDialog.getOpenFileName(self, i18n.t("osk.import_title"), start, i18n.t("osk.filter"))
         return self.import_osk_file(path) if path else False
 
     def import_osk_file(self, path):
-        if self._closing or self._archive_controller.busy or self._preparing_update:
+        if self._closing or self._archive_controller.busy or self._preparing_update or self._update_edit_locked:
             return False
         self._archive_kind = "import"
         self.settings.setValue("paths/last_osk", str(path))
@@ -170,7 +170,7 @@ class SkinArchiveWorkflow:
         return "apply" if box.clickedButton() is apply else "saved" if box.clickedButton() is saved else None
 
     def on_export_osk(self):
-        if not self.skin or self._closing or self._archive_controller.busy or self._preparing_update:
+        if not self.skin or self._closing or self._archive_controller.busy or self._preparing_update or self._update_edit_locked:
             return False
         origin = self._archive_origin()
         directory = self.settings.value("paths/last_osk_export", "", str)
@@ -226,7 +226,7 @@ class SkinArchiveWorkflow:
             dialog, self._archive_progress = self._archive_progress, None
             dialog.close()
             dialog.deleteLater()
-        enabled = not busy and not self._preparing_update
+        enabled = not busy and not self._preparing_update and not self._update_edit_locked
         for widget in (self.centralWidget(), self.menuBar(), self.mania_ini_dock, self.mania_design_dock, self.debug_dock):
             widget.setEnabled(enabled)
         if self._preview_window:

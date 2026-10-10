@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -42,7 +43,7 @@ RECENT_LIMIT = 12
 
 class MainWindow(SkinArchiveWorkflow, QMainWindow):
     def _open_assets_manager(self, tab: str = "image"):
-        if self._archive_controller.busy:
+        if self._archive_controller.busy or self._update_edit_locked:
             return
         if not self.skin:
             self.on_open_generic()
@@ -89,6 +90,8 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         self._software_update_dialog = None
         self.available_release = None
         self._preparing_update = False
+        self._update_edit_locked = False
+        self._update_download_release = None
         self._update_exit_authorized = False
         self._quit_after_cancel = False
         self._init_archive_workflow()
@@ -97,6 +100,7 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         self.update_service.announcements_ready.connect(self._online_notes_ready)
         self.update_service.update_ready.connect(self._updates_checked)
         self.update_service.failed.connect(self._online_update_failed)
+        self.update_service.state_changed.connect(self._update_transfer_state_changed)
         self._network_check_timer = QTimer(self)
         self._network_check_timer.setSingleShot(True)
         self._network_check_timer.timeout.connect(self._background_online_check)
@@ -1078,12 +1082,13 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
             self.settings.setValue("updates/source_mode", mode)
 
     def _background_online_check(self):
-        if self._closing or not self.settings.value("updates/auto_check", True, bool):
+        if (self._closing or self._preparing_update or self._update_edit_locked
+                or self.update_service.downloading or self.update_service.ready_path
+                or not self.settings.value("updates/auto_check", True, bool)):
             return
         self._apply_update_source_mode()
         self.update_service.check_announcements()
-        channel = self.settings.value("updates/channel", CHANNEL, str)
-        self.update_service.check_updates(channel if channel in ("stable", "preview") else CHANNEL)
+        self.update_service.check_all_updates()
 
     def _refresh_online_notes(self, force=False):
         self._apply_update_source_mode()
@@ -1099,7 +1104,7 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
             self._update_dialog.set_online_entries(entries,
                 self.update_service.last_result_from_cache["announcements"])
         elif entries:
-            channel = self.settings.value("updates/channel", CHANNEL, str)
+            channel = CHANNEL
             candidates = entries if channel == "preview" else [entry for entry in entries if entry["channel"] in ("stable", "release")]
             if not candidates:
                 return
@@ -1120,6 +1125,9 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
     def _online_update_failed(self, category, message):
         if category == "announcements" and self._update_dialog:
             self._update_dialog.set_online_error(message)
+        if (category == "download" and self._update_edit_locked and not self._preparing_update
+                and not self.update_service.downloading):
+            self._clear_update_download_intent()
 
     def _show_software_update(self):
         if self._closing:
@@ -1127,11 +1135,10 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         if self._software_update_dialog is None:
             dialog = SoftwareUpdateDialog(self.update_service, self.settings, self)
             self._software_update_dialog = dialog
+            dialog.update_requested.connect(self._start_release_update)
             dialog.install_requested.connect(self._request_update_install)
             dialog.cancel_install_requested.connect(self._cancel_update_install)
             dialog.finished.connect(lambda _, viewer=dialog: self._finish_software_update(viewer))
-            if self.available_release and not self.update_service.ready_path:
-                dialog._checked(self.available_release)
         self._software_update_dialog.show()
         self._software_update_dialog.raise_()
         self._software_update_dialog.activateWindow()
@@ -1143,13 +1150,50 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
             self._software_update_dialog = None
         dialog.deleteLater()
 
-    def _set_update_preparing(self, active):
-        self._preparing_update = active
+    def _set_update_edit_lock(self, active):
+        self._update_edit_locked = active
+        enabled = not active and not self._preparing_update and not self._archive_controller.busy
         for widget in (self.centralWidget(), self.menuBar(), self.mania_ini_dock,
                        self.mania_design_dock, self.debug_dock):
-            widget.setEnabled(not active)
+            widget.setEnabled(enabled)
         if self._preview_window:
-            self._preview_window.setEnabled(not active)
+            self._preview_window.setEnabled(enabled)
+        self._sync_archive_actions()
+
+    def _clear_update_download_intent(self):
+        self._update_download_release = None
+        self._set_update_edit_lock(False)
+
+    def _start_release_update(self, release):
+        dialog = self._software_update_dialog
+        if (dialog is None or self._closing or self._preparing_update or self._update_edit_locked
+                or self._archive_controller.busy or self.update_service.downloading):
+            return False
+        if not self.mania_ini_dock._confirm_discard_if_dirty() or not self._confirm_design_navigation():
+            return False
+        # Choosing the other row can replace a previously downloaded release.
+        # Discard it before the new intent locks edits: discard_ready emits idle.
+        if self.update_service.ready_path and self.update_service.ready_release != release:
+            self.update_service.discard_ready()
+        self._network_check_timer.stop()
+        self._update_download_release = deepcopy(release)
+        self._set_update_edit_lock(True)
+        if not dialog.begin_update(release):
+            self._clear_update_download_intent()
+            return False
+        return True
+
+    def _update_transfer_state_changed(self, state):
+        if self._closing or not self._update_edit_locked or self._preparing_update:
+            return
+        dialog = self._software_update_dialog
+        if (not self.update_service.downloading and (dialog is None or not dialog.auto_install_pending)) or state == "idle" or (state == "ready" and
+                (dialog is None or not dialog.auto_install_pending or not dialog.can_install)):
+            self._clear_update_download_intent()
+
+    def _set_update_preparing(self, active):
+        self._preparing_update = active
+        self._set_update_edit_lock(self._update_edit_locked)
         if self._software_update_dialog:
             self._software_update_dialog.set_preparing(active)
 
@@ -1159,13 +1203,21 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         payload, release = self.update_service.ready_path, self.update_service.ready_release
         if not payload or not release or installed_executable() is None:
             return
-        if not self.mania_ini_dock._confirm_discard_if_dirty() or not self._confirm_design_navigation():
-            return
+        preauthorized = self._update_edit_locked and self._update_download_release == release
+        if not preauthorized:
+            if not self.mania_ini_dock._confirm_discard_if_dirty() or not self._confirm_design_navigation():
+                if self._software_update_dialog:
+                    self._software_update_dialog.set_preparing(False)
+                return
         self.std_preview.set_playing(False)
         self.mania_preview.set_playing(False)
         self.btn_pause.setChecked(True)
         if self._install_controller.start(payload, release):
             self._set_update_preparing(True)
+        else:
+            self._clear_update_download_intent()
+            if self._software_update_dialog:
+                self._software_update_dialog.set_preparing(False, i18n.t("updater.install_busy", "请等待当前更新操作结束后重试"))
 
     def _cancel_update_install(self):
         if not self._update_exit_authorized:
@@ -1174,6 +1226,7 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
     def _update_install_failed(self, message):
         if self._closing:
             return
+        self._clear_update_download_intent()
         self._set_update_preparing(False)
         if self._software_update_dialog:
             self._software_update_dialog.set_preparing(False, message)
@@ -1182,6 +1235,7 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
     def _update_install_cancelled(self):
         if self._closing:
             return
+        self._clear_update_download_intent()
         self._set_update_preparing(False)
         if self._quit_after_cancel:
             self._quit_after_cancel = False
@@ -1205,6 +1259,9 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
     def _read_update_result(self):
         job_path = self.settings.value("updates/pending_job", "", str)
         if self._closing or not job_path:
+            return
+        if self._update_edit_locked or self._preparing_update or self.update_service.downloading:
+            self._update_result_timer.start(1000)
             return
         job = read_record(job_path)
         result = read_record(job.get("result_file", "")) if job else None
@@ -1375,12 +1432,14 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
             act=self.recent_menu.addAction(p); act.triggered.connect(lambda checked=False, pp=p: self.load_skin(pp))
 
     def on_open_generic(self):
-        if self._archive_controller.busy or self._preparing_update:
+        if self._archive_controller.busy or self._preparing_update or self._update_edit_locked:
             return
         start=self._start_dir_for_dialog(); d=QFileDialog.getExistingDirectory(self, i18n.t("dialog.select_skin", "Select skin folder"), start)
         if d: self.load_skin(d)
 
     def on_open_osu_skins(self):
+        if self._archive_controller.busy or self._preparing_update or self._update_edit_locked:
+            return
         if not (self.osu_root and (self.osu_root/"Skins").exists()):
             self.on_set_osu_root()
             if not (self.osu_root and (self.osu_root/"Skins").exists()): return
@@ -1392,6 +1451,8 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         if last and Path(last).exists(): self.load_skin(last)
 
     def on_set_osu_root(self):
+        if self._archive_controller.busy or self._preparing_update or self._update_edit_locked:
+            return
         start=str(self.osu_root) if self.osu_root else os.path.expanduser("~")
         d=QFileDialog.getExistingDirectory(self, i18n.t("dialog.select_osu_folder", "Select osu! folder"), start)
         if d:
@@ -1400,7 +1461,7 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
             self._remember_osu_root(d); self.statusBar().showMessage(i18n.t("status.osu_set", "osu! folder set: {path}").format(path=d), 5000)
 
     def load_skin(self, directory: str, check_dirty=True):
-        if self._archive_controller.busy or self._preparing_update:
+        if self._archive_controller.busy or self._preparing_update or self._update_edit_locked:
             return False
         path = Path(directory)
         if path.is_file() and path.suffix.casefold() == ".osk":

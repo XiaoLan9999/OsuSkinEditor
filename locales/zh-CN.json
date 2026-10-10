@@ -287,5 +287,15 @@
     "manual_restore": "自动恢复未完成，旧程序备份：{path}"
   },
   "osk.kept_workspace": "副本已解包，当前皮肤未切换：{path}",
-  "osk.repaired_status": "已兼容 {count} 个旧版 lazer 目录记录，原包保持不变"
+  "osk.repaired_status": "已兼容 {count} 个旧版 lazer 目录记录，原包保持不变",
+  "updater.stable_short": "正式版",
+  "updater.retry_check": "重新检查",
+  "updater.connection_settings": "连接设置",
+  "updater.update_now": "更新",
+  "updater.check_failed_short": "检查失败",
+  "updater.checking_short": "正在检查…",
+  "updater.channel_available": "{version} · 有更新",
+  "updater.channel_current": "{version} · 无更新",
+  "updater.channel_unpublished": "暂无更新",
+  "updater.install_busy": "请等待当前更新操作结束后重试"
 }

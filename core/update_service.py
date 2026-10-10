@@ -96,6 +96,7 @@ def _header(reply, name):
 class UpdateService(QObject):
     announcements_ready = Signal(object)
     update_ready = Signal(object)
+    channels_ready = Signal(object)
     failed = Signal(str, str)
     download_progress = Signal(int, int)
     download_ready = Signal(str, object)
@@ -115,6 +116,8 @@ class UpdateService(QObject):
         self.public_key = public_key
         self._operations = {}
         self._channel = CHANNEL
+        self._all_channels = False
+        self._last_update_results = {}
         self._authorized = {}
         self._closed = False
         self._state = "idle"
@@ -154,6 +157,10 @@ class UpdateService(QObject):
     @property
     def ready_release(self):
         return deepcopy(self._ready_release)
+
+    @property
+    def last_update_results(self):
+        return deepcopy(self._last_update_results)
 
     @property
     def state(self):
@@ -235,16 +242,32 @@ class UpdateService(QObject):
         if kind == "announcements":
             self.announcements_ready.emit(deepcopy(value))
             return
-        release = select_release(value, self._channel, self.current_build_number)
+        results = {
+            channel: {"release": select_release(value, channel, self.current_build_number),
+                      "latest": deepcopy(value["channels"][channel])}
+            for channel in ("stable", "preview")
+        }
+        self._last_update_results = deepcopy(results)
+        releases = ([item["release"] for item in results.values() if item["release"] is not None]
+                    if self._all_channels else [results[self._channel]["release"]])
         self._authorized.clear()
-        if release is not None:
-            self._authorized[self._fingerprint(release)] = deepcopy(release)
+        for release in releases:
+            if release is not None:
+                self._authorized[self._fingerprint(release)] = deepcopy(release)
+        release = max((item for item in releases if item is not None),
+                      key=lambda item: item["build_number"], default=None)
+        if self._all_channels:
+            self.channels_ready.emit(deepcopy(results))
+        # Older clients listen to this single-result signal. A dual-channel
+        # check offers the newest eligible release exactly once for them.
         self.update_ready.emit(deepcopy(release))
 
     def check_announcements(self, force=False):
         return self._check("announcements", ANNOUNCEMENTS_URL, force)
 
     def check_updates(self, channel=CHANNEL, force=False):
+        if self._closed:
+            return False
         if channel not in ("stable", "preview"):
             self.failed.emit("updates", "Unknown update channel")
             return False
@@ -252,7 +275,23 @@ class UpdateService(QObject):
             self.failed.emit("updates", "Finish or discard the prepared update before checking another release")
             return False
         self._channel = channel
+        if "updates" not in self._operations:
+            self._all_channels = False
         self._authorized.clear()
+        self._last_update_results = {}
+        return self._check("updates", MANIFEST_URL, force)
+
+    def check_all_updates(self, force=False):
+        if self._closed:
+            return False
+        if self.downloading or self._ready_path:
+            self.failed.emit("updates", "Finish or discard the prepared update before checking another release")
+            return False
+        # Joining a single-channel check reuses its signed-manifest batch. It
+        # upgrades selection to both channels without starting extra requests.
+        self._all_channels = True
+        self._authorized.clear()
+        self._last_update_results = {}
         return self._check("updates", MANIFEST_URL, force)
 
     def _check(self, kind, url, force):
@@ -289,8 +328,9 @@ class UpdateService(QObject):
 
     def _metadata_score(self, kind, value):
         if kind == "updates":
-            release = value["channels"][self._channel]
-            return (release["build_number"] if release else 0,
+            releases = (value["channels"].values() if self._all_channels else
+                        (value["channels"][self._channel],))
+            return (max((release["build_number"] for release in releases if release), default=0),
                     datetime.fromisoformat(value["published_at"].replace("Z", "+00:00")).timestamp())
         return (max((entry.get("date", "") for entry in value), default=""), len(value))
 
@@ -496,7 +536,8 @@ class UpdateService(QObject):
             value = self._validate(transfer.kind, data)
             # Selection is checked before cache replacement as well.
             if transfer.kind == "updates":
-                select_release(value, self._channel, self.current_build_number)
+                for channel in (("stable", "preview") if self._all_channels else (self._channel,)):
+                    select_release(value, channel, self.current_build_number)
         except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
             self._fail(transfer, "The metadata is invalid or its signature could not be verified")
             return
