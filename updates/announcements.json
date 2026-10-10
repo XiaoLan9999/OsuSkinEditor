@@ -2,6 +2,62 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "preview-r9",
+      "version": "1.6.0-preview.9",
+      "date": "2026-10-10",
+      "channel": "preview",
+      "title": {
+        "zh-CN": "简洁更新与 Beta / 正式版同步检查",
+        "en-US": "Compact updates with Beta and stable checks"
+      },
+      "summary": {
+        "zh-CN": "Beta：打开更新窗口即检查 Beta 与正式版，有新版点击更新即可自动完成下载、校验与重启",
+        "en-US": "Beta: check Beta and stable releases when opening updates, then update with one click to download, verify and restart"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "更新操作更简单",
+            "en-US": "Simpler update actions"
+          },
+          "items": {
+            "zh-CN": [
+              "点击检查程序更新立即同时检查 Beta 与正式版，两行分别显示结果，无需选择通道",
+              "有新版时点击对应行的更新，先处理未保存的修改，再自动下载、校验并重启更新",
+              "进度与取消留在同一个紧凑窗口中，正式版暂未提供更新包时显示暂无更新",
+              "连接方式与启动自动检查放在默认折叠的连接设置中，默认继续自动检测并选择有效线路"
+            ],
+            "en-US": [
+              "Check Beta and stable releases immediately in two rows without choosing a channel",
+              "Click Update on an available release, resolve unsaved edits, then download, verify and restart automatically",
+              "Keep progress and cancellation in the compact window, and show that no stable update is available when its slot is empty",
+              "Place connection and automatic-check preferences in collapsed connection settings while keeping automatic route selection"
+            ]
+          }
+        },
+        {
+          "title": {
+            "zh-CN": "保留文件保护与使用说明",
+            "en-US": "Keep file protection and usage guidance"
+          },
+          "items": {
+            "zh-CN": [
+              "继续校验发布签名与更新文件，失败时切换线路，原位置替换前保留旧程序备份，启动失败时尝试恢复",
+              "使用统一递增构建号防止降级，自动检查只提示新版本，安装由用户主动选择",
+              "README 专注功能、操作与兼容范围，移除程序下载方式、源码构建命令和验证结果",
+              "离线公告仅包含当前 r9 说明，在线公告保留此前版本历史"
+            ],
+            "en-US": [
+              "Retain release and file checks, route fallback, executable backups and recovery when the new app fails to start",
+              "Prevent downgrades with increasing build numbers; automatic checks only notify, while installation requires an Update click",
+              "Focus the README on features, usage and compatibility instead of download instructions, build commands or validation results",
+              "Bundle only this r9 build note offline while retaining earlier online announcements"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "preview-r8",
       "version": "1.6.0-preview.8",
       "date": "2026-10-10",
