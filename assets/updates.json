@@ -2,56 +2,54 @@
   "schema_version": 1,
   "entries": [
     {
-      "id": "stable-v1.6.0",
-      "version": "1.6.0",
-      "date": "2026-10-21",
+      "id": "stable-v1.6.1",
+      "version": "1.6.1",
+      "date": "2026-10-22",
       "channel": "stable",
       "title": {
-        "zh-CN": "1.6.0 正式版",
-        "en-US": "1.6.0 stable release"
+        "zh-CN": "1.6.1 正式版 · 图片兼容性修复",
+        "en-US": "1.6.1 stable · Image compatibility repair"
       },
       "summary": {
-        "zh-CN": "整合此前 Beta 的皮肤编辑与测试功能，正式提供 OSK、Mania 试玩、Standard 自动测试与简洁的程序更新",
-        "en-US": "Bring the existing Beta editing and testing features to stable, including OSK packages, Mania playtesting, Standard auto tests and compact app updates"
+        "zh-CN": "识别图片真实格式与后缀不符的问题，备份后无损修复可处理的 PNG 素材，帮助恢复新版 lazer 中消失的长条主体等图像",
+        "en-US": "Detect mismatched image formats and extensions, then back up and losslessly repair supported PNG assets to restore hold bodies and other artwork missing in newer lazer"
       },
       "sections": [
         {
           "title": {
-            "zh-CN": "编辑与测试工作台",
-            "en-US": "Editing and testing workspace"
+            "zh-CN": "图片兼容性检查与修复",
+            "en-US": "Image compatibility check and repair"
           },
           "items": {
             "zh-CN": [
-              "导入 stable / lazer 导出的 OSK，在独立工作副本中修改图片、音频与配置，再导出新皮肤包，保留原始文件与 lazer JSON 布局",
-              "Mania 可自动测试或键盘试玩，检查各列普通音符、长条头身尾、六档判定、连击和舞台侧图，调整流速与 BPM",
-              "Standard 自动展示圆圈、滑条和转盘，支持 CS / AR、判定与连击素材检查，仍使用内置排列而非真实谱面",
-              "保留上隐与底部球槽的可视化设计及独立副本保存，支持画面比例、独立预览窗口与 F11 全屏"
+              "在素材工具中打开图片兼容性检查与修复，后台只读扫描真实格式，列出后缀不符、损坏、多帧及无法自动处理的图片",
+              "部分旧皮肤的 PNG 文件实际为 TIFF，新版 lazer 可能拒绝加载，使长条主体或其他素材消失，检查不局限于长条图片",
+              "勾选可修复的 PNG 目标后，将单帧、8 位图片无损转为真正 PNG，保持文件名、尺寸、透明度、RGBA 像素与配置引用",
+              "修复前将原文件备份到皮肤内的 __conflicts_backup 并保留相对路径，完成后刷新素材与预览，无法无损处理的图片不自动覆盖"
             ],
             "en-US": [
-              "Import OSK exports from stable or lazer, edit images, audio and configuration in an independent working copy, then export a new package while preserving the original files and lazer JSON layouts",
-              "Use Mania auto tests or keyboard playtests to inspect per-column notes, hold heads, bodies and tails, six judgements, combo artwork and stage sides, with speed and BPM controls",
-              "Preview Standard circles, sliders and spinners automatically, adjust CS / AR and inspect judgement and combo assets using built-in patterns rather than real beatmaps",
-              "Keep visual upper-cover and receptor-height design with separate skin copies, aspect ratios, a detached preview window and F11 fullscreen"
+              "Open Image compatibility check and repair under Asset tools to scan actual formats in the background without changing files, listing extension mismatches, damaged images, multiple frames and unsupported conversions",
+              "Some older skins name TIFF content as PNG, which newer lazer may reject, hiding hold bodies or other artwork; the scan is not limited to hold images",
+              "Select repairable PNG targets to losslessly convert single-frame, 8-bit images into real PNG while retaining filenames, dimensions, alpha, RGBA pixels and configuration references",
+              "Back up originals under the skin folder in __conflicts_backup with relative paths before replacement, refresh assets and previews afterward, and leave unsupported images untouched"
             ]
           }
         },
         {
           "title": {
-            "zh-CN": "正式版更新与公告",
-            "en-US": "Stable updates and announcements"
+            "zh-CN": "OSK 与正式版更新",
+            "en-US": "OSK and stable updates"
           },
           "items": {
             "zh-CN": [
-              "点击检查程序更新即同时显示 Beta 与正式版结果，有新版时点击更新自动完成下载、校验与重启，连接设置保持默认折叠",
-              "正式版 1.6.0 使用构建号 10，高于 Beta r9，已有可用更新入口的 Beta 用户可通过正式版一行升级，统一构建号继续阻止降级",
-              "继续保留多线路选择与失败切换、发布签名和文件校验、旧程序备份及启动失败恢复，安装前先处理未保存修改",
-              "离线公告只包含当前正式版说明，在线公告保留 Beta r9 及此前版本历史"
+              "可修复 OSK 导入后的独立工作副本，再导出新 OSK 并重新导入 lazer，原始皮肤包保持不变",
+              "外部目录修复不会自动同步到 lazer 数据库中的皮肤，lazer 原生 JSON 控件布局仍保留在导出包中，预览范围不变",
+              "正式版构建号升为 11，高于 1.6.0 与 Beta r9，继续使用紧凑的双通道检查、一键更新、多线路和失败恢复，离线仅保留当前说明"
             ],
             "en-US": [
-              "Check updates to see Beta and stable results together, then click Update to download, verify and restart automatically while connection settings stay collapsed by default",
-              "Stable 1.6.0 uses build number 10, above Beta r9, so Beta clients with a working updater can upgrade through the stable row while global build numbers continue to prevent downgrades",
-              "Retain multiple routes and fallback, release and file checks, executable backups and startup-failure recovery, resolving unsaved edits before installation",
-              "Bundle only the current stable release note offline and retain Beta r9 and earlier announcements online"
+              "Repair the independent working copy imported from an OSK, then export a new OSK and import it back into lazer while preserving the original package",
+              "Repairing an external folder does not update skins already stored in lazer databases; native JSON layouts remain preserved in exports without expanding preview support",
+              "Stable build number 11 is newer than 1.6.0 and Beta r9, retaining compact dual-channel checks, one-click updates, multiple routes and recovery while bundling only the current release note offline"
             ]
           }
         }

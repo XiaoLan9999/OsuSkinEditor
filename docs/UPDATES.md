@@ -2,7 +2,7 @@
 
 本文说明当前更新机制及发布顺序，示例中的路径需按实际发布环境调整
 
-当前源码身份为 `VERSION = "1.6.0"`、`BUILD_ID = "stable-v1.6.0"`、`BUILD_NUMBER = 10`、`CHANNEL = "stable"`，界面将 `preview` 显示为 Beta，将 `stable` 显示为正式版
+当前源码身份为 `VERSION = "1.6.1"`、`BUILD_ID = "stable-v1.6.1"`、`BUILD_NUMBER = 11`、`CHANNEL = "stable"`，界面将 `preview` 显示为 Beta，将 `stable` 显示为正式版
 
 ## 用户如何更新
 
@@ -14,7 +14,7 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 
 点击有新版的行内「更新」后先处理未保存的配置与皮肤设计，再自动下载、校验并重启完成安装，不再设置独立的下载与重启按钮，进度与取消在同一个紧凑窗口中显示，后台自动检查只提示，不自行安装
 
-正式版 1.6.0 使用构建号 10，发布后的签名清单在 `stable` 槽提供该版本，同时在 `preview` 槽保留 r9，构建号低于 10 的客户端可从正式版一行更新，1.6.0 不会将较旧的 r9 识别为可安装更新
+正式版 1.6.1 使用构建号 11，发布后的签名清单在 `stable` 槽提供该版本，同时在 `preview` 槽保留 r9，构建号低于 11 的客户端可从正式版一行更新，1.6.1 不会将较旧的 r9 识别为可安装更新
 
 此前正式版槽为 `null` 时只显示「暂无更新」，旧 v1.5 仍不具备程序内更新入口，需要按上面的旧版迁移方式处理
 
@@ -29,7 +29,7 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 | 文件或地址 | 用途 |
 | --- | --- |
 | `core/app_version.py` | 当前版本、公告 ID、构建号、默认通道与平台 |
-| `assets/updates.json` | 随程序打包的当前构建离线说明，当前仅包含正式版 1.6.0 |
+| `assets/updates.json` | 随程序打包的当前构建离线说明，当前仅包含正式版 1.6.1 |
 | `updates/announcements.json` | 完整中英双语公告历史，最新记录排在前面 |
 | `updates/manifest.json` | 经过 Ed25519 签名的稳定版和预览版更新指针 |
 | `core/update_public_key.py` | 程序内置的 Ed25519 公钥，可提交到源码仓库 |
@@ -72,7 +72,7 @@ v1.5 和开发预览 r1–r4 没有程序更新入口，需要先手动下载并
 
 `BUILD_NUMBER` 是全渠道统一的递增序号，每次发布都应大于正式版和开发预览中所有已经发布的构建号，不能在切换通道后重新从 1 开始，也不能只递增版本字符串
 
-例如 Beta r9 的构建号为 9，正式版 1.6.0 使用构建号 10，因此 r9 可以升级到正式版；之后发布的 Beta 或正式版都必须大于 10，客户端不会因为版本标签看起来更高而安装相同或更低的构建号
+例如 Beta r9 的构建号为 9，正式版 1.6.0 使用构建号 10，正式版 1.6.1 使用构建号 11，因此 r9 和 1.6.0 都可以升级到 1.6.1；之后发布的 Beta 或正式版都必须大于 11，客户端不会因为版本标签看起来更高而安装相同或更低的构建号
 
 合并旧清单时，发布工具会比较两个通道的最大构建号，拒绝相同或更低的构建号，维护者还需确保源码中的构建身份与最终 EXE 一致
 
@@ -116,18 +116,18 @@ py -m venv .venv
 
 不要先发布指向尚未上传文件的新清单，也不要手动修改已经签名的 Base64 载荷，发布工具本身不执行上传或 Git 操作
 
-下面以发布正式版 1.6.0 为例，示例不会展示或创建私钥，后续发布时版本和构建号必须改成实际待发布构建的值
+下面以发布正式版 1.6.1 为例，示例不会展示或创建私钥，后续发布时版本和构建号必须改成实际待发布构建的值
 
 ```powershell
 $signingKey = Join-Path $env:LOCALAPPDATA 'OsuSkinEditor\Publisher\update-signing-key.pem'
-$releaseExe = 'work\release\OsuSkinEditor-v1.6.0-windows-x64.exe'
+$releaseExe = 'work\release\OsuSkinEditor-v1.6.1-windows-x64.exe'
 $manifestArgs = @(
     '--exe', $releaseExe,
-    '--version', '1.6.0',
-    '--build-id', 'stable-v1.6.0',
-    '--build-number', '10',
+    '--version', '1.6.1',
+    '--build-id', 'stable-v1.6.1',
+    '--build-number', '11',
     '--channel', 'stable',
-    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.0/OsuSkinEditor-v1.6.0-windows-x64.exe',
+    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.1/OsuSkinEditor-v1.6.1-windows-x64.exe',
     '--private-key', $signingKey,
     '--output', 'updates\manifest.json'
 )

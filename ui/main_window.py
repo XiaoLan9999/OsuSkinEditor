@@ -15,6 +15,7 @@ from core import i18n
 
 from core.skin_loader import SkinLoader
 from ui.assets_manager import AssetsManagerDialog
+from ui.image_compat_dialog import ImageCompatibilityDialog
 from pathlib import Path
 from ui.preview.std_preview import StdPreview
 from ui.preview.mania_preview import ManiaPreview
@@ -42,6 +43,39 @@ RECENT_LIMIT = 12
 
 
 class MainWindow(SkinArchiveWorkflow, QMainWindow):
+    def _open_image_compatibility(self):
+        if (self._closing or self._archive_controller.busy or self._preparing_update
+                or self._update_edit_locked or self._image_compat_dialog is not None):
+            return
+        if not self.skin:
+            self.on_open_generic()
+        if not self.skin:
+            return
+        had_design = self.mania_design_dock._dirty
+        if not self._confirm_design_navigation():
+            return
+        if had_design:
+            self.mania_design_dock.reset_preview()
+        was_dirty = self.mania_ini_dock._dirty
+        if not self.mania_ini_dock._confirm_discard_if_dirty():
+            return
+        if was_dirty and not self.load_skin(str(self.skin.root), check_dirty=False):
+            return
+        changed = []
+        dialog = ImageCompatibilityDialog(self.skin.root, self)
+        self._image_compat_dialog = dialog
+        dialog.assets_changed.connect(lambda: changed.append(True))
+        try:
+            dialog.exec()
+        finally:
+            self._image_compat_dialog = None
+            if changed and not self._closing:
+                self.load_skin(str(self.skin.root), check_dirty=False)
+            dialog.deleteLater()
+            if self._close_after_image_compat:
+                self._close_after_image_compat = False
+                QTimer.singleShot(0, self.close)
+
     def _open_assets_manager(self, tab: str = "image"):
         if self._archive_controller.busy or self._update_edit_locked:
             return
@@ -80,6 +114,8 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         self.settings = QSettings()
         self.osu_root = self._load_osu_root()
         self._preview_window = None
+        self._image_compat_dialog = None
+        self._close_after_image_compat = False
         self._preview_placeholder = None
         self._preview_split_sizes = None
         self._update_dialog = None
@@ -144,6 +180,7 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         self.act_check_updates = QAction(self)
         self.act_assets_images = QAction(self)
         self.act_assets_audio = QAction(self)
+        self.act_image_compat = QAction(self)
 
         # 作者链接动作
         self.act_link_github = QAction(self)
@@ -185,6 +222,7 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         self.act_check_updates.triggered.connect(self._show_software_update)
         self.act_assets_images.triggered.connect(lambda: self._open_assets_manager('image'))
         self.act_assets_audio.triggered.connect(lambda: self._open_assets_manager('audio'))
+        self.act_image_compat.triggered.connect(self._open_image_compatibility)
 
 
         # Keep language selection discoverable even when the current language
@@ -221,6 +259,8 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         self.author_menu.addAction(self.act_check_updates)
         self.assets_menu.addAction(self.act_assets_images)
         self.assets_menu.addAction(self.act_assets_audio)
+        self.assets_menu.addSeparator()
+        self.assets_menu.addAction(self.act_image_compat)
 
         self.author_menu.addSeparator()
         self.author_menu.addAction(self.act_link_github)
@@ -763,7 +803,8 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
                         self.btn_mania, self.btn_design, self.mania_playback, self.act_design_show,
                         self.std_playback, self.preview_aspect, self.btn_detach, self.btn_fullscreen,
                         self.preview_zoom, self.asset_search, self.asset_filter, self.act_reload,
-                        self.act_assets_images, self.act_assets_audio, self.act_mania_show, self.act_debug_show):
+                        self.act_assets_images, self.act_assets_audio, self.act_image_compat,
+                        self.act_mania_show, self.act_debug_show):
             control.setEnabled(loaded)
         self.act_open_last.setEnabled(bool(self.settings.value("paths/last_skin", "", str)))
         if loaded:
@@ -952,6 +993,11 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
             self.resize(1280, 800)
 
     def closeEvent(self, event):
+        if self._image_compat_dialog is not None:
+            self._close_after_image_compat = True
+            self._image_compat_dialog.reject()
+            event.ignore()
+            return
         if self._archive_controller.busy:
             self._close_after_archive = True
             self._archive_controller.cancel()
@@ -1167,7 +1213,8 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
     def _start_release_update(self, release):
         dialog = self._software_update_dialog
         if (dialog is None or self._closing or self._preparing_update or self._update_edit_locked
-                or self._archive_controller.busy or self.update_service.downloading):
+                or self._archive_controller.busy or self.update_service.downloading
+                or self._image_compat_dialog is not None):
             return False
         if not self.mania_ini_dock._confirm_discard_if_dirty() or not self._confirm_design_navigation():
             return False
@@ -1324,6 +1371,7 @@ class MainWindow(SkinArchiveWorkflow, QMainWindow):
         self.assets_menu.setTitle(i18n.t('menu.assets', '皮肤文件小工具'))
         self.act_assets_images.setText(i18n.t('action.assets_images', '图片管理…'))
         self.act_assets_audio.setText(i18n.t('action.assets_audio', '音频管理…'))
+        self.act_image_compat.setText(i18n.t('image_compat.menu', '图片兼容性检查与修复…'))
 
         self.act_link_github.setText(i18n.t("links.github", "Github项目地址"))
         self.act_link_steam.setText(i18n.t("links.steam", "Steam个人主页"))
