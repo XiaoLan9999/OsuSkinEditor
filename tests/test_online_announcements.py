@@ -8,7 +8,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QCoreApplication,QSettings,QEvent,Qt
 from PySide6.QtWidgets import QApplication
 from core import i18n
-from core.update_announcements import CURRENT_BUILD_ID,load_announcements,parse_announcements
+from core.update_announcements import CURRENT_BUILD_ID,load_announcements,parse_announcements,mark_announcements_seen
 from ui.update_announcements import UpdateAnnouncementsDialog
 from ui.main_window import MainWindow
 from tests.test_online_update_ui import FakeUpdateService
@@ -28,6 +28,7 @@ class OnlineAnnouncementTests(unittest.TestCase):
         self.local=load_announcements()
         self.remote=deepcopy(self.local[0])
         self.remote['id']='preview-r99'
+        self.remote['channel']='preview'
         self.remote['title']['zh-CN']='远程公告 <img src="https://example.invalid/x">'
         self.dialog=UpdateAnnouncementsDialog(self.settings)
         self.dialog.show()
@@ -75,6 +76,7 @@ class OnlineAnnouncementTests(unittest.TestCase):
             window=MainWindow()
         window.show()
         APP.processEvents()
+        mark_announcements_seen(window.settings,[CURRENT_BUILD_ID])
         window.settings.setValue('updates/channel','preview')
         with patch('ui.main_window.CHANNEL','stable'):
             window._online_notes_ready((self.remote,*self.local))

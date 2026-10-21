@@ -2,56 +2,56 @@
   "schema_version": 1,
   "entries": [
     {
-      "id": "preview-r9",
-      "version": "1.6.0-preview.9",
-      "date": "2026-10-10",
-      "channel": "preview",
+      "id": "stable-v1.6.0",
+      "version": "1.6.0",
+      "date": "2026-10-21",
+      "channel": "stable",
       "title": {
-        "zh-CN": "简洁更新与 Beta / 正式版同步检查",
-        "en-US": "Compact updates with Beta and stable checks"
+        "zh-CN": "1.6.0 正式版",
+        "en-US": "1.6.0 stable release"
       },
       "summary": {
-        "zh-CN": "Beta：打开更新窗口即检查 Beta 与正式版，有新版点击更新即可自动完成下载、校验与重启",
-        "en-US": "Beta: check Beta and stable releases when opening updates, then update with one click to download, verify and restart"
+        "zh-CN": "整合此前 Beta 的皮肤编辑与测试功能，正式提供 OSK、Mania 试玩、Standard 自动测试与简洁的程序更新",
+        "en-US": "Bring the existing Beta editing and testing features to stable, including OSK packages, Mania playtesting, Standard auto tests and compact app updates"
       },
       "sections": [
         {
           "title": {
-            "zh-CN": "更新操作更简单",
-            "en-US": "Simpler update actions"
+            "zh-CN": "编辑与测试工作台",
+            "en-US": "Editing and testing workspace"
           },
           "items": {
             "zh-CN": [
-              "点击检查程序更新立即同时检查 Beta 与正式版，两行分别显示结果，无需选择通道",
-              "有新版时点击对应行的更新，先处理未保存的修改，再自动下载、校验并重启更新",
-              "进度与取消留在同一个紧凑窗口中，正式版暂未提供更新包时显示暂无更新",
-              "连接方式与启动自动检查放在默认折叠的连接设置中，默认继续自动检测并选择有效线路"
+              "导入 stable / lazer 导出的 OSK，在独立工作副本中修改图片、音频与配置，再导出新皮肤包，保留原始文件与 lazer JSON 布局",
+              "Mania 可自动测试或键盘试玩，检查各列普通音符、长条头身尾、六档判定、连击和舞台侧图，调整流速与 BPM",
+              "Standard 自动展示圆圈、滑条和转盘，支持 CS / AR、判定与连击素材检查，仍使用内置排列而非真实谱面",
+              "保留上隐与底部球槽的可视化设计及独立副本保存，支持画面比例、独立预览窗口与 F11 全屏"
             ],
             "en-US": [
-              "Check Beta and stable releases immediately in two rows without choosing a channel",
-              "Click Update on an available release, resolve unsaved edits, then download, verify and restart automatically",
-              "Keep progress and cancellation in the compact window, and show that no stable update is available when its slot is empty",
-              "Place connection and automatic-check preferences in collapsed connection settings while keeping automatic route selection"
+              "Import OSK exports from stable or lazer, edit images, audio and configuration in an independent working copy, then export a new package while preserving the original files and lazer JSON layouts",
+              "Use Mania auto tests or keyboard playtests to inspect per-column notes, hold heads, bodies and tails, six judgements, combo artwork and stage sides, with speed and BPM controls",
+              "Preview Standard circles, sliders and spinners automatically, adjust CS / AR and inspect judgement and combo assets using built-in patterns rather than real beatmaps",
+              "Keep visual upper-cover and receptor-height design with separate skin copies, aspect ratios, a detached preview window and F11 fullscreen"
             ]
           }
         },
         {
           "title": {
-            "zh-CN": "保留文件保护与使用说明",
-            "en-US": "Keep file protection and usage guidance"
+            "zh-CN": "正式版更新与公告",
+            "en-US": "Stable updates and announcements"
           },
           "items": {
             "zh-CN": [
-              "继续校验发布签名与更新文件，失败时切换线路，原位置替换前保留旧程序备份，启动失败时尝试恢复",
-              "使用统一递增构建号防止降级，自动检查只提示新版本，安装由用户主动选择",
-              "README 专注功能、操作与兼容范围，移除程序下载方式、源码构建命令和验证结果",
-              "离线公告仅包含当前 r9 说明，在线公告保留此前版本历史"
+              "点击检查程序更新即同时显示 Beta 与正式版结果，有新版时点击更新自动完成下载、校验与重启，连接设置保持默认折叠",
+              "正式版 1.6.0 使用构建号 10，高于 Beta r9，已有可用更新入口的 Beta 用户可通过正式版一行升级，统一构建号继续阻止降级",
+              "继续保留多线路选择与失败切换、发布签名和文件校验、旧程序备份及启动失败恢复，安装前先处理未保存修改",
+              "离线公告只包含当前正式版说明，在线公告保留 Beta r9 及此前版本历史"
             ],
             "en-US": [
-              "Retain release and file checks, route fallback, executable backups and recovery when the new app fails to start",
-              "Prevent downgrades with increasing build numbers; automatic checks only notify, while installation requires an Update click",
-              "Focus the README on features, usage and compatibility instead of download instructions, build commands or validation results",
-              "Bundle only this r9 build note offline while retaining earlier online announcements"
+              "Check updates to see Beta and stable results together, then click Update to download, verify and restart automatically while connection settings stay collapsed by default",
+              "Stable 1.6.0 uses build number 10, above Beta r9, so Beta clients with a working updater can upgrade through the stable row while global build numbers continue to prevent downgrades",
+              "Retain multiple routes and fallback, release and file checks, executable backups and startup-failure recovery, resolving unsaved edits before installation",
+              "Bundle only the current stable release note offline and retain Beta r9 and earlier announcements online"
             ]
           }
         }

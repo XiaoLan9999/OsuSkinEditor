@@ -67,7 +67,8 @@ class ArchiveControllerTests(unittest.TestCase):
         deadline = time.monotonic() + timeout
         while not predicate() and time.monotonic() < deadline:
             APP.processEvents()
-            QTest.qWait(5)
+            # Release the GIL so the archive executor can make progress.
+            time.sleep(.005)
         self.assertTrue(predicate(), "Asynchronous archive task did not complete")
 
     def archive(self, entries):
