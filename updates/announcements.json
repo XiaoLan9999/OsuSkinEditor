@@ -2,6 +2,60 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "stable-v1.6.1",
+      "version": "1.6.1",
+      "date": "2026-10-22",
+      "channel": "stable",
+      "title": {
+        "zh-CN": "1.6.1 正式版 · 图片兼容性修复",
+        "en-US": "1.6.1 stable · Image compatibility repair"
+      },
+      "summary": {
+        "zh-CN": "识别图片真实格式与后缀不符的问题，备份后无损修复可处理的 PNG 素材，帮助恢复新版 lazer 中消失的长条主体等图像",
+        "en-US": "Detect mismatched image formats and extensions, then back up and losslessly repair supported PNG assets to restore hold bodies and other artwork missing in newer lazer"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "图片兼容性检查与修复",
+            "en-US": "Image compatibility check and repair"
+          },
+          "items": {
+            "zh-CN": [
+              "在素材工具中打开图片兼容性检查与修复，后台只读扫描真实格式，列出后缀不符、损坏、多帧及无法自动处理的图片",
+              "部分旧皮肤的 PNG 文件实际为 TIFF，新版 lazer 可能拒绝加载，使长条主体或其他素材消失，检查不局限于长条图片",
+              "勾选可修复的 PNG 目标后，将单帧、8 位图片无损转为真正 PNG，保持文件名、尺寸、透明度、RGBA 像素与配置引用",
+              "修复前将原文件备份到皮肤内的 __conflicts_backup 并保留相对路径，完成后刷新素材与预览，无法无损处理的图片不自动覆盖"
+            ],
+            "en-US": [
+              "Open Image compatibility check and repair under Asset tools to scan actual formats in the background without changing files, listing extension mismatches, damaged images, multiple frames and unsupported conversions",
+              "Some older skins name TIFF content as PNG, which newer lazer may reject, hiding hold bodies or other artwork; the scan is not limited to hold images",
+              "Select repairable PNG targets to losslessly convert single-frame, 8-bit images into real PNG while retaining filenames, dimensions, alpha, RGBA pixels and configuration references",
+              "Back up originals under the skin folder in __conflicts_backup with relative paths before replacement, refresh assets and previews afterward, and leave unsupported images untouched"
+            ]
+          }
+        },
+        {
+          "title": {
+            "zh-CN": "OSK 与正式版更新",
+            "en-US": "OSK and stable updates"
+          },
+          "items": {
+            "zh-CN": [
+              "可修复 OSK 导入后的独立工作副本，再导出新 OSK 并重新导入 lazer，原始皮肤包保持不变",
+              "外部目录修复不会自动同步到 lazer 数据库中的皮肤，lazer 原生 JSON 控件布局仍保留在导出包中，预览范围不变",
+              "正式版构建号升为 11，高于 1.6.0 与 Beta r9，继续使用紧凑的双通道检查、一键更新、多线路和失败恢复，离线仅保留当前说明"
+            ],
+            "en-US": [
+              "Repair the independent working copy imported from an OSK, then export a new OSK and import it back into lazer while preserving the original package",
+              "Repairing an external folder does not update skins already stored in lazer databases; native JSON layouts remain preserved in exports without expanding preview support",
+              "Stable build number 11 is newer than 1.6.0 and Beta r9, retaining compact dual-channel checks, one-click updates, multiple routes and recovery while bundling only the current release note offline"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "stable-v1.6.0",
       "version": "1.6.0",
       "date": "2026-10-21",
