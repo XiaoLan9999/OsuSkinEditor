@@ -109,13 +109,13 @@
     "mask_height": "Cover height",
     "mask_fade": "Fade height",
     "bottom_group": "Receptors and hit position",
-    "bottom_height": "Bottom extension",
+    "bottom_height": "Bottom adjustment",
     "link_hit": "Move the actual hit position too",
-    "bottom_hint": "Extending the bottom moves key images upward\nEnable linking to also move the actual hit position",
+    "bottom_hint": "Move up by default, or enable reverse direction to move down\nEnable linking to move the actual hit position too\nImage pixels below the playfield are cropped",
     "reset": "Reset this design",
     "mask_height_tip": "Height of the fully opaque cover measured from the top of the lanes",
     "mask_fade_tip": "Height of the transition from the opaque cover to transparency",
-    "bottom_height_tip": "Add space below the original image to lift the key image",
+    "bottom_height_tip": "Set movement relative to the original image, in a 480-high coordinate space; reverse direction moves down",
     "link_hit_tip": "Disable linking to move only the image and keep the original hit position",
     "invalid_parent": "Choose an existing destination folder",
     "no_skin": "Open a skin first",
@@ -124,7 +124,9 @@
     "scope": "{keys}K · {name}",
     "original_status": "Showing the original skin",
     "export_failed": "Could not save skin copy",
-    "saved_status": "Copy saved to\n{path}"
+    "saved_status": "Copy saved to\n{path}",
+    "reverse_bottom": "Reverse direction (move down)",
+    "reverse_bottom_tip": "Move key images down by shortening their bottom in the saved copy; the original skin is preserved"
   },
   "playtest": {
     "mode": "Test mode",

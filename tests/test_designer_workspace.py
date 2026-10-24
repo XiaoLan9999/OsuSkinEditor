@@ -97,6 +97,22 @@ class DesignerWorkspaceTests(unittest.TestCase):
         self.assertEqual(dock._preview_error, "")
         self.assertTrue(dock.export_button.isEnabled())
 
+    def test_reverse_direction_moves_linked_hit_target_down_and_respects_lower_limit(self):
+        dock = self.window.mania_design_dock
+        dock.receptor_raise.setValue(20)
+        dock.reverse_bottom.setChecked(True)
+        self.assertEqual(self.window.mania_preview.effective_hit_position, 445)
+        self.assertEqual(self.window.mania_preview.design_options.receptor_raise, -20)
+        self.assertEqual(dock._preview_error, '')
+        dock.receptor_raise.setValue(56)  # 425 + 56 would leave the 480-high playfield
+        self.assertTrue(dock._preview_error)
+        self.assertFalse(dock.export_button.isEnabled())
+        dock.link_hit_position.setChecked(False)
+        self.assertEqual(dock._preview_error, '')
+        self.assertEqual(self.window.mania_preview.effective_hit_position, 425)
+        self.assertEqual(self.window.mania_preview.design_options.receptor_raise, -56)
+        self.assertTrue(dock.export_button.isEnabled())
+
 
 if __name__ == "__main__":
     unittest.main()

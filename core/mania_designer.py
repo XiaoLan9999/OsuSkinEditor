@@ -71,8 +71,8 @@ def validate_design(design: ManiaDesign) -> None:
     lift = _number(design.receptor_raise, 'Receptor raise')
     if top < 0 or fade < 0 or top + fade > 480:
         raise DesignValidationError('Upper mask height + fade must be between 0 and 480')
-    if not 0 <= lift <= 240:
-        raise DesignValidationError('Receptor raise must be between 0 and 240')
+    if not -240 <= lift <= 240:
+        raise DesignValidationError('Receptor adjustment must be between -240 and 240')
     try:
         ImageColor.getrgb(design.mask_colour)
     except (ValueError, TypeError) as exc:
@@ -80,7 +80,7 @@ def validate_design(design: ManiaDesign) -> None:
 
 
 def effective_hit_position(values: Mapping[str, str], design: ManiaDesign) -> float:
-    """Return the gameplay target; receptor art only moves when raised separately."""
+    """Return the gameplay target, optionally linked to signed receptor movement."""
     validate_design(design)
     data = _settings(values)
     old = _number(data.get('hitposition', 402), 'HitPosition')
@@ -88,7 +88,7 @@ def effective_hit_position(values: Mapping[str, str], design: ManiaDesign) -> fl
     if design.receptor_raise and design.link_hit_position and not 240 <= new <= 480:
         raise DesignValidationError(
             f'Linked HitPosition would be {new:g}; osu! supports 240–480; '
-            'reduce the receptor raise or disable linking')
+            'reduce the receptor adjustment or disable linking')
     return new
 
 
@@ -264,7 +264,7 @@ def _key_fallback(keys: int, column: int, data: Mapping[str, str]) -> str:
     # For even keycounts using a special side key, refuse guessing when the
     # author did not specify KeyImage paths: stable/lazer differ here.
     if keys % 2 == 0 and data.get('specialstyle', '0') not in ('', '0'):
-        raise DesignValidationError('Set explicit KeyImage paths before raising special-side-key layouts')
+        raise DesignValidationError('Set explicit KeyImage paths before moving special-side-key layouts')
     suffix = 'S' if keys % 2 and column == keys // 2 else str(1 + min(column, keys - column - 1) % 2)
     return f'mania-key{suffix}'
 
@@ -284,15 +284,25 @@ def _prepare_key_images(root: Path, keys: int, values: Mapping[str, str], design
             if not variants:
                 raise DesignValidationError(
                     f'{option}: image "{name}" is missing; add the actual idle/pressed '
-                    'key image to the skin before raising receptors; game defaults cannot be edited')
+                    'key image to the skin before moving receptors; game defaults cannot be edited')
             images = {}
             for density, path in variants.items():
                 source = _read_image(path)
                 padding = round(float(design.receptor_raise) * 1.6 * density)
+                if source.height + padding < 1:
+                    raise DesignValidationError(
+                        f'{option}: lowering this far would remove the entire key image; '
+                        'reduce the receptor adjustment')
                 if source.height + padding > 16384:
                     raise DesignValidationError(f'{option}: the resulting image would be too tall')
-                image = Image.new('RGBA', (source.width, source.height + padding))
-                image.paste(source, (0, 0))  # no mask: preserve every authored RGBA byte.
+                if padding < 0:
+                    # Legacy keys anchor their image bottom to the playfield
+                    # bottom. Removing bottom rows moves the retained artwork
+                    # down without changing its scale or its remaining pixels.
+                    image = source.crop((0, 0, source.width, source.height + padding))
+                else:
+                    image = Image.new('RGBA', (source.width, source.height + padding))
+                    image.paste(source, (0, 0))  # no mask: preserve every authored RGBA byte.
                 images[density] = image
             # Also provide an SD fallback when the author supplied HD only.
             if 1 not in images:

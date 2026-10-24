@@ -36,6 +36,7 @@ class ManiaPreview(QWidget):
         self._design_overlay = None
         self._overlay_density = 2
         self.design_options = ManiaDesign()
+        self._receptor_crop_cache = {}
         self.scroll_speed = 20.0
         self.demo_bpm = 120.0
         self._show_hit_guide = False
@@ -294,8 +295,20 @@ class ManiaPreview(QWidget):
     def set_design_options(self, design: ManiaDesign):
         # Build first so an invalid design cannot replace the working preview.
         effective_hit_position(self._settings, design)
+        if design.receptor_raise < 0 and self._assets is not None:
+            for suffix, sprites in (("", self._assets.keys_up), ("D", self._assets.keys_down)):
+                for column, sprite in enumerate(sprites):
+                    if sprite is None:
+                        continue
+                    for frame, density in zip(sprite.frames, sprite.densities):
+                        padding = round(float(design.receptor_raise)*1.6*density)
+                        if frame.height() + padding < 1:
+                            raise DesignValidationError(
+                                f'KeyImage{column}{suffix}: lowering this far would remove the entire key image; '
+                                'reduce the receptor adjustment')
         overlay = build_preview_overlay(self._skin_root(), self.keys, design) if self.skin else None
         self.design_options = design
+        self._receptor_crop_cache.clear()
         self._set_overlay_image(overlay)
         self.update()
 
@@ -369,6 +382,7 @@ class ManiaPreview(QWidget):
         return Path(self.skin.root) if self.skin else None
 
     def _load_skin_ini(self):
+        self._receptor_crop_cache.clear()
         self.skin_ini = None
         root = self._skin_root()
         if root:
@@ -603,7 +617,8 @@ class ManiaPreview(QWidget):
         # receptor. Match that rounding per density, including sub-unit lifts.
         padding = round(float(self.design_options.receptor_raise)*1.6*density)
         lift = padding/density/1.6*scale
-        return QRectF(lane_x, field.bottom()-height-lift, width, height)
+        visible_height = max(0, height + min(0, lift))
+        return QRectF(lane_x, field.bottom()-height-lift, width, visible_height)
 
     def _stage_bottom_rect(self, left, total, field, scale):
         image, density = self._active_stage_bottom()
@@ -656,9 +671,24 @@ class ManiaPreview(QWidget):
                 key, density = sprite.frame_at(self.t), sprite.density_at(self.t)
             rect = self._key_rect(index, lane_x, width, field, scale, key, density)
             if key is not None:
+                image_density = density if density is not None else self._image_density.get(key.cacheKey(), 1)
+                padding = round(float(self.design_options.receptor_raise)*1.6*image_density)
+                if padding < 0:
+                    # Match the saved texture before any upside-down flip.
+                    # Clipping a flipped full-height image would remove the
+                    # opposite end of the authored key artwork.
+                    retained_height = key.height() + padding
+                    if retained_height > 0:
+                        cache_key = (key.cacheKey(), retained_height)
+                        if cache_key not in self._receptor_crop_cache:
+                            self._receptor_crop_cache[cache_key] = key.copy(0, 0, key.width(), retained_height)
+                        key = self._receptor_crop_cache[cache_key]
+                    else:
+                        key = None
                 flags = self._assets.key_down_flips if pressed else self._assets.key_flips
                 flip = self._bool(self._settings.get("upsidedown")) and not flags[index]
-                self._paint_pixmap(painter, key, rect, flip)
+                if key is not None and not rect.isEmpty():
+                    self._paint_pixmap(painter, key, rect, flip)
             else:
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor("#66ddeb" if pressed else "#29364a"))

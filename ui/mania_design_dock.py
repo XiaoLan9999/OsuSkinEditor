@@ -163,6 +163,9 @@ class ManiaDesignDock(QDockWidget):
         self.receptor_raise = self._spin(0, 180, "DesignerReceptorRaise")
         row.addRow(self.raise_label, self.receptor_raise)
         bottom_layout.addLayout(row)
+        self.reverse_bottom = QCheckBox(self.bottom_group)
+        self.reverse_bottom.setObjectName("DesignerReceptorReverse")
+        bottom_layout.addWidget(self.reverse_bottom)
         self.link_hit_position = QCheckBox(self.bottom_group)
         self.link_hit_position.setObjectName("DesignerLinkHitPosition")
         self.link_hit_position.setChecked(True)
@@ -199,6 +202,7 @@ class ManiaDesignDock(QDockWidget):
         for spin in (self.top_height, self.top_fade, self.receptor_raise):
             spin.valueChanged.connect(self._changed)
         self.link_hit_position.toggled.connect(self._changed)
+        self.reverse_bottom.toggled.connect(self._changed)
         self.retranslate()
         self._update_enabled()
 
@@ -214,7 +218,7 @@ class ManiaDesignDock(QDockWidget):
         return ManiaDesign(
             top_mask_height=self.top_height.value(),
             top_mask_fade=self.top_fade.value(),
-            receptor_raise=self.receptor_raise.value(),
+            receptor_raise=(-1 if self.reverse_bottom.isChecked() else 1) * self.receptor_raise.value(),
             link_hit_position=self.link_hit_position.isChecked(),
             mask_colour=self._colour,
         )
@@ -272,7 +276,8 @@ class ManiaDesignDock(QDockWidget):
         try:
             self.top_height.setValue(int(design.top_mask_height))
             self.top_fade.setValue(int(design.top_mask_fade))
-            self.receptor_raise.setValue(int(design.receptor_raise))
+            self.receptor_raise.setValue(abs(int(design.receptor_raise)))
+            self.reverse_bottom.setChecked(design.receptor_raise < 0)
             self.link_hit_position.setChecked(design.link_hit_position)
             self._colour = design.mask_colour
         finally:
@@ -369,14 +374,16 @@ class ManiaDesignDock(QDockWidget):
         self.fade_label.setText(i18n.t("designer.mask_fade", "渐变高度"))
         self.colour_label.setText(i18n.t("designer.mask_colour", "遮罩颜色"))
         self.bottom_group.setTitle(i18n.t("designer.bottom_group", "球槽与判定位置"))
-        self.raise_label.setText(i18n.t("designer.bottom_height", "底部加高"))
+        self.raise_label.setText(i18n.t("designer.bottom_height", "底部调整"))
+        self.reverse_bottom.setText(i18n.t("designer.reverse_bottom", "反向调整（向下移动）"))
         self.link_hit_position.setText(i18n.t("designer.link_hit", "联动实际判定位置"))
-        self.bottom_hint.setText(i18n.t("designer.bottom_hint", "加高会向上移动按键图像\n勾选联动时同步移动实际判定位置"))
+        self.bottom_hint.setText(i18n.t("designer.bottom_hint", "默认向上移动，勾选反向后向下移动\n勾选联动时同步移动实际判定位置\n向下移出底部的图像会被裁切"))
         self.reset_button.setText(i18n.t("designer.reset", "重置本次设计"))
         self.export_button.setText(i18n.t("designer.export", "保存皮肤副本"))
         self.top_height.setToolTip(i18n.t("designer.mask_height_tip", "从轨道顶端开始完全遮挡的高度"))
         self.top_fade.setToolTip(i18n.t("designer.mask_fade_tip", "完整遮挡下方逐渐透明的过渡高度"))
-        self.receptor_raise.setToolTip(i18n.t("designer.bottom_height_tip", "相对原图增加底部留白并抬高按键图像"))
+        self.receptor_raise.setToolTip(i18n.t("designer.bottom_height_tip", "设置相对原图的移动幅度，反向时向下移动；尺寸以 480 高度为基准"))
+        self.reverse_bottom.setToolTip(i18n.t("designer.reverse_bottom_tip", "勾选后向下移动按键图像，保存时裁短图像底部；原皮肤保持不变"))
         self.link_hit_position.setToolTip(i18n.t("designer.link_hit_tip", "取消联动时只移动图像，实际判定位置保持原值"))
         self._update_colour()
         self._update_status()

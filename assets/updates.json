@@ -2,54 +2,54 @@
   "schema_version": 1,
   "entries": [
     {
-      "id": "stable-v1.6.1",
-      "version": "1.6.1",
-      "date": "2026-10-22",
+      "id": "stable-v1.6.2",
+      "version": "1.6.2",
+      "date": "2026-10-25",
       "channel": "stable",
       "title": {
-        "zh-CN": "1.6.1 正式版 · 图片兼容性修复",
-        "en-US": "1.6.1 stable · Image compatibility repair"
+        "zh-CN": "1.6.2 正式版 · 球槽反向调整",
+        "en-US": "1.6.2 stable · Reverse receptor adjustment"
       },
       "summary": {
-        "zh-CN": "识别图片真实格式与后缀不符的问题，备份后无损修复可处理的 PNG 素材，帮助恢复新版 lazer 中消失的长条主体等图像",
-        "en-US": "Detect mismatched image formats and extensions, then back up and losslessly repair supported PNG assets to restore hold bodies and other artwork missing in newer lazer"
+        "zh-CN": "为底部球槽加入反向向下调整，可同步移动实际判定位置，预览与保存继续使用同一套素材位置规则",
+        "en-US": "Add downward receptor adjustment with optional hit-position linking, keeping preview and exported artwork aligned"
       },
       "sections": [
         {
           "title": {
-            "zh-CN": "图片兼容性检查与修复",
-            "en-US": "Image compatibility check and repair"
+            "zh-CN": "球槽可上下调整",
+            "en-US": "Move receptors up or down"
           },
           "items": {
             "zh-CN": [
-              "在素材工具中打开图片兼容性检查与修复，后台只读扫描真实格式，列出后缀不符、损坏、多帧及无法自动处理的图片",
-              "部分旧皮肤的 PNG 文件实际为 TIFF，新版 lazer 可能拒绝加载，使长条主体或其他素材消失，检查不局限于长条图片",
-              "勾选可修复的 PNG 目标后，将单帧、8 位图片无损转为真正 PNG，保持文件名、尺寸、透明度、RGBA 像素与配置引用",
-              "修复前将原文件备份到皮肤内的 __conflicts_backup 并保留相对路径，完成后刷新素材与预览，无法无损处理的图片不自动覆盖"
+              "在球槽与判定位置中设置 0–180 的调整幅度，默认向上，勾选反向调整（向下移动）后向下移动",
+              "勾选联动实际判定位置时，向下移动同步增大 HitPosition，保持 240–480 范围；关闭联动时只移动图像",
+              "向下保存通过裁短按键图片底部实现，移出画面底部的图像会被裁切，图片裁空或判定位置超出范围时拒绝保存",
+              "预览在按键图像翻转前裁切，保持松开与按下图像、SD / @2x 和保存结果的位置关系"
             ],
             "en-US": [
-              "Open Image compatibility check and repair under Asset tools to scan actual formats in the background without changing files, listing extension mismatches, damaged images, multiple frames and unsupported conversions",
-              "Some older skins name TIFF content as PNG, which newer lazer may reject, hiding hold bodies or other artwork; the scan is not limited to hold images",
-              "Select repairable PNG targets to losslessly convert single-frame, 8-bit images into real PNG while retaining filenames, dimensions, alpha, RGBA pixels and configuration references",
-              "Back up originals under the skin folder in __conflicts_backup with relative paths before replacement, refresh assets and previews afterward, and leave unsupported images untouched"
+              "Set an adjustment amount from 0 to 180 in Receptors and hit position; the default moves up, while Reverse direction (move down) moves down",
+              "With hit-position linking enabled, downward movement increases HitPosition within 240–480; disabling linking moves only the artwork",
+              "Export downward movement by shortening the bottom of key images, clipping artwork beyond the playfield edge; reject empty images and out-of-range hit positions",
+              "Crop preview key images before flipping so idle and pressed artwork, SD / @2x rounding and export positioning remain aligned"
             ]
           }
         },
         {
           "title": {
-            "zh-CN": "OSK 与正式版更新",
-            "en-US": "OSK and stable updates"
+            "zh-CN": "继续保存为独立副本",
+            "en-US": "Keep exporting independent copies"
           },
           "items": {
             "zh-CN": [
-              "可修复 OSK 导入后的独立工作副本，再导出新 OSK 并重新导入 lazer，原始皮肤包保持不变",
-              "外部目录修复不会自动同步到 lazer 数据库中的皮肤，lazer 原生 JSON 控件布局仍保留在导出包中，预览范围不变",
-              "正式版构建号升为 11，高于 1.6.0 与 Beta r9，继续使用紧凑的双通道检查、一键更新、多线路和失败恢复，离线仅保留当前说明"
+              "保存皮肤副本后再选用或导出 OSK，原皮肤不变，载入副本时清空本次虚拟调整，避免重复叠加",
+              "保留图片兼容性修复、Mania 试玩、Standard 自动测试与简洁双通道更新，正式版构建号升为 12",
+              "离线仅保留当前版本说明，在线历史保留此前正式版与 Beta 记录"
             ],
             "en-US": [
-              "Repair the independent working copy imported from an OSK, then export a new OSK and import it back into lazer while preserving the original package",
-              "Repairing an external folder does not update skins already stored in lazer databases; native JSON layouts remain preserved in exports without expanding preview support",
-              "Stable build number 11 is newer than 1.6.0 and Beta r9, retaining compact dual-channel checks, one-click updates, multiple routes and recovery while bundling only the current release note offline"
+              "Select the exported skin copy or package it as an OSK without modifying the original; loading the copy resets the virtual adjustment to avoid applying it twice",
+              "Retain image compatibility repair, Mania playtesting, Standard auto tests and compact dual-channel updates with stable build number 12",
+              "Bundle only the current release note offline while retaining earlier stable and Beta announcements online"
             ]
           }
         }

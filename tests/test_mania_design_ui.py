@@ -6,12 +6,14 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
+from PIL import Image
 
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.mania_designer import ManiaDesign
 from core.skin_loader import SkinLoader
+from core.skin_ini import SkinIni
 from ui.mania_design_dock import ManiaDesignDock, _ExportCopyDialog
 from ui.widgets.wheel_guard import ClickWheelSpinBox
 
@@ -74,6 +76,44 @@ class ManiaDesignUiTests(unittest.TestCase):
         self.assertEqual(changes, [ManiaDesign()])
         self.assertFalse(self.dock._dirty)
         self.assertEqual((self.source / "skin.ini").read_bytes(), self.original_ini)
+
+    def test_reverse_option_emits_negative_adjustment_and_reset_clears_it(self):
+        self.load()
+        changes = []
+        self.dock.design_changed.connect(changes.append)
+        self.dock.receptor_raise.setValue(20)
+        self.dock.reverse_bottom.setChecked(True)
+        self.assertEqual(changes[-1].receptor_raise, -20)
+        self.assertTrue(self.dock._dirty)
+        self.dock.reverse_bottom.setChecked(False)
+        self.assertEqual(changes[-1].receptor_raise, 20)
+        self.dock._apply_options(ManiaDesign(receptor_raise=-12, link_hit_position=False))
+        self.assertTrue(self.dock.reverse_bottom.isChecked())
+        self.assertEqual(self.dock.receptor_raise.value(), 12)
+        self.assertEqual(self.dock.options().receptor_raise, -12)
+        self.dock.reset_preview()
+        self.assertFalse(self.dock.reverse_bottom.isChecked())
+        self.assertEqual(self.dock.options(), ManiaDesign())
+        self.assertFalse(self.dock._dirty)
+        self.assertEqual((self.source / "skin.ini").read_bytes(), self.original_ini)
+
+    def test_reverse_export_from_dock_saves_lower_hitposition_and_shorter_key_copy(self):
+        for name in ('mania-key1', 'mania-key1D', 'mania-key2', 'mania-key2D'):
+            Image.new('RGBA', (12, 80), (40, 80, 120, 160)).save(self.source/(name+'.png'))
+        self.load()
+        self.dock.receptor_raise.setValue(10)
+        self.dock.reverse_bottom.setChecked(True)
+        target = self.parent/'Reverse copy'
+        with patch.object(self.dock, '_choose_export_destination', return_value=target):
+            self.assertTrue(self.dock._export_copy())
+        values = SkinIni.read(target/'skin.ini').mania_get(4)
+        self.assertEqual(values['HitPosition'], '412')
+        with Image.open(target/(values['KeyImage0']+'.png')) as image:
+            self.assertEqual(image.size, (12, 64))
+            self.assertEqual(image.getpixel((0, 63)), (40, 80, 120, 160))
+        self.assertEqual((self.source/'skin.ini').read_bytes(), self.original_ini)
+        with Image.open(self.source/'mania-key1.png') as original:
+            self.assertEqual(original.size, (12, 80))
 
     def test_refresh_same_skin_keeps_live_design(self):
         self.load()
