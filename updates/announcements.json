@@ -2,6 +2,60 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "stable-v1.6.2",
+      "version": "1.6.2",
+      "date": "2026-10-25",
+      "channel": "stable",
+      "title": {
+        "zh-CN": "1.6.2 正式版 · 球槽反向调整",
+        "en-US": "1.6.2 stable · Reverse receptor adjustment"
+      },
+      "summary": {
+        "zh-CN": "为底部球槽加入反向向下调整，可同步移动实际判定位置，预览与保存继续使用同一套素材位置规则",
+        "en-US": "Add downward receptor adjustment with optional hit-position linking, keeping preview and exported artwork aligned"
+      },
+      "sections": [
+        {
+          "title": {
+            "zh-CN": "球槽可上下调整",
+            "en-US": "Move receptors up or down"
+          },
+          "items": {
+            "zh-CN": [
+              "在球槽与判定位置中设置 0–180 的调整幅度，默认向上，勾选反向调整（向下移动）后向下移动",
+              "勾选联动实际判定位置时，向下移动同步增大 HitPosition，保持 240–480 范围；关闭联动时只移动图像",
+              "向下保存通过裁短按键图片底部实现，移出画面底部的图像会被裁切，图片裁空或判定位置超出范围时拒绝保存",
+              "预览在按键图像翻转前裁切，保持松开与按下图像、SD / @2x 和保存结果的位置关系"
+            ],
+            "en-US": [
+              "Set an adjustment amount from 0 to 180 in Receptors and hit position; the default moves up, while Reverse direction (move down) moves down",
+              "With hit-position linking enabled, downward movement increases HitPosition within 240–480; disabling linking moves only the artwork",
+              "Export downward movement by shortening the bottom of key images, clipping artwork beyond the playfield edge; reject empty images and out-of-range hit positions",
+              "Crop preview key images before flipping so idle and pressed artwork, SD / @2x rounding and export positioning remain aligned"
+            ]
+          }
+        },
+        {
+          "title": {
+            "zh-CN": "继续保存为独立副本",
+            "en-US": "Keep exporting independent copies"
+          },
+          "items": {
+            "zh-CN": [
+              "保存皮肤副本后再选用或导出 OSK，原皮肤不变，载入副本时清空本次虚拟调整，避免重复叠加",
+              "保留图片兼容性修复、Mania 试玩、Standard 自动测试与简洁双通道更新，正式版构建号升为 12",
+              "离线仅保留当前版本说明，在线历史保留此前正式版与 Beta 记录"
+            ],
+            "en-US": [
+              "Select the exported skin copy or package it as an OSK without modifying the original; loading the copy resets the virtual adjustment to avoid applying it twice",
+              "Retain image compatibility repair, Mania playtesting, Standard auto tests and compact dual-channel updates with stable build number 12",
+              "Bundle only the current release note offline while retaining earlier stable and Beta announcements online"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "stable-v1.6.1",
       "version": "1.6.1",
       "date": "2026-10-22",
