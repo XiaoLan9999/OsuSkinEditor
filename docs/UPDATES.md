@@ -107,27 +107,31 @@ py -m venv .venv
 
 ## 发布顺序
 
+发布附件使用固定文件名：主程序为 `OsuSkinEditor.exe`，源码包为 `OsuSkinEditor-source.zip`，校验文件为 `SHA256SUMS.txt`，不在附件文件名中添加版本号
+
+版本与构建号保存在 `core/app_version.py`、程序更新窗口及签名清单中，并通过 GitHub Release 标题和标签区分各次发布，自动更新替换当前程序路径，不能依靠 EXE 文件名判断实际安装版本
+
 1. 更新 `core/app_version.py` 和中英双语公告，确认构建号、公告 ID、通道与将要发布的版本一致
 2. 完成测试与打包，在副本目录验证当前 EXE 的启动、公告、检查更新、下载校验，以及更新助手的成功和失败恢复路径
-3. 为最终 EXE 使用带版本的文件名，将它上传到本项目对应的 GitHub Release，预览构建标记为 prerelease
+3. 将最终主程序以固定文件名 `OsuSkinEditor.exe` 上传到本项目对应的 GitHub Release，预览构建标记为 prerelease
 4. 确认上传文件可以下载，并核对下载内容与本地待签名 EXE 一致，此后不要重新构建或覆盖该版本的 EXE
 5. 使用本地私钥对最终 EXE 的更新信息签名，存在旧清单时先验证旧清单并保留另一通道
 6. 最后将签名清单和公告历史提交到 `main`，让客户端看到可下载的新版本，发布前检查候选文件中没有私钥、缓存、日志或个人皮肤
 
 不要先发布指向尚未上传文件的新清单，也不要手动修改已经签名的 Base64 载荷，发布工具本身不执行上传或 Git 操作
 
-下面以发布正式版 1.6.2 为例，示例不会展示或创建私钥，后续发布时版本和构建号必须改成实际待发布构建的值
+下面以尚未发布的下一正式版 1.6.3 为例，示例不会展示或创建私钥，版本和构建号必须改成实际待发布构建的值
 
 ```powershell
 $signingKey = Join-Path $env:LOCALAPPDATA 'OsuSkinEditor\Publisher\update-signing-key.pem'
-$releaseExe = 'work\release\OsuSkinEditor-v1.6.2-windows-x64.exe'
+$releaseExe = 'work\release\OsuSkinEditor.exe'
 $manifestArgs = @(
     '--exe', $releaseExe,
-    '--version', '1.6.2',
-    '--build-id', 'stable-v1.6.2',
-    '--build-number', '12',
+    '--version', '1.6.3',
+    '--build-id', 'stable-v1.6.3',
+    '--build-number', '13',
     '--channel', 'stable',
-    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.2/OsuSkinEditor-v1.6.2-windows-x64.exe',
+    '--url', 'https://github.com/XiaoLan9999/OsuSkinEditor/releases/download/v1.6.3/OsuSkinEditor.exe',
     '--private-key', $signingKey,
     '--output', 'updates\manifest.json'
 )
